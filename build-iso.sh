@@ -125,6 +125,8 @@ success "ISO created: $NEW_ISO"
 if [[ -n "$ISO_MOVE" ]]; then
   info "Moving ISO to destination..."
   if eval "$ISO_MOVE"; then
+    # Delete the source file after successful transfer
+    rm -f "$NEW_ISO"
     success "ISO moved successfully"
   else
     warn "Failed to move ISO to destination"
