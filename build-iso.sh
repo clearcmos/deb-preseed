@@ -9,9 +9,46 @@ success() { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERR]${NC} $*"; exit 1; }
 
+# Host selection
+HOSTS_DIR="hosts"
+available_hosts=()
+while IFS= read -r -d '' host_dir; do
+  host=$(basename "$host_dir")
+  if [[ -f "$HOSTS_DIR/$host/preseed.cfg" ]]; then
+    available_hosts+=("$host")
+  fi
+done < <(find "$HOSTS_DIR" -mindepth 1 -maxdepth 1 -type d -print0)
+
+# Check if we have any hosts with preseed files
+if [[ ${#available_hosts[@]} -eq 0 ]]; then
+  error "No hosts with preseed.cfg files found in $HOSTS_DIR directory"
+fi
+
+# Prompt user to select a host
+echo "Available hosts:"
+for i in "${!available_hosts[@]}"; do
+  echo "  $((i+1)). ${available_hosts[$i]}"
+done
+
+echo -n "Select host [1-${#available_hosts[@]}]: "
+read -r selection
+
+# Validate selection
+if ! [[ "$selection" =~ ^[0-9]+$ ]] || \
+   [[ "$selection" -lt 1 ]] || \
+   [[ "$selection" -gt ${#available_hosts[@]} ]]; then
+  error "Invalid selection: $selection"
+fi
+
+SELECTED_HOST="${available_hosts[$((selection-1))]}"
+PRESEED_PATH="$HOSTS_DIR/$SELECTED_HOST/preseed.cfg"
+
+info "Selected host: $SELECTED_HOST (using $PRESEED_PATH)"
+
 # Load .preseed-env
-ENV_FILE=".preseed-env"
+ENV_FILE="secrets/.preseed-env"
 if [[ ! -f "$ENV_FILE" ]]; then
+  mkdir -p "$(dirname "$ENV_FILE")"
   cat > "$ENV_FILE" <<'EOF'
 # Edit these:
 ROOT_PASSWORD=
@@ -61,7 +98,7 @@ sed \
   -e "s|\${username}|$(printf '%s' "$USERNAME" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${userpassword}|$(printf '%s' "$USER_PASSWORD" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${ssh_authorized_key}|$(printf '%s' "$SSH_AUTHORIZED_KEY" | sed 's|[&]|\\&|g')|g" \
-  preseed.cfg > "$TMP_PRESEED"
+  "$PRESEED_PATH" > "$TMP_PRESEED"
 sudo cp "$TMP_PRESEED" "$WORK/extracted/preseed.cfg"
 rm "$TMP_PRESEED"
 
@@ -93,7 +130,7 @@ sudo mv "${GRUB_CFG}.new" "$GRUB_CFG"
 # Build new ISO
 info "Building custom ISO..."
 VERSION=$(echo "$ISO_ORIG" | grep -oP 'debian-\K[0-9.]+')
-NEW_ISO="debian-${VERSION}-automated.iso"
+NEW_ISO="debian-${VERSION}-automated-${SELECTED_HOST}.iso"
 sudo xorriso -as mkisofs -r -J -joliet-long -l \
   -iso-level 3 \
   -partition_offset 16 \
