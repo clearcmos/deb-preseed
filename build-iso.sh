@@ -9,8 +9,8 @@ success() { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERR]${NC} $*"; exit 1; }
 
-# Load .env
-ENV_FILE=".env"
+# Load .preseed-env
+ENV_FILE=".preseed-env"
 if [[ ! -f "$ENV_FILE" ]]; then
   cat > "$ENV_FILE" <<'EOF'
 # Edit these:
