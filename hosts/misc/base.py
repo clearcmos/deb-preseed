@@ -782,291 +782,126 @@ AllowUsers {self.current_non_root_user} root
         logger.info("SSH configuration updated.")
 
     def discover_smb_shares(self):
-        """Discover and mount SMB/CIFS shares"""
-        logger.info("Starting SMB/CIFS share discovery...")
-        logger.debug(f"SMB discovery initiated at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        """Configure and mount SMB/CIFS shares from configuration file"""
+        logger.info("Setting up SMB/CIFS shares from configuration...")
+        logger.debug(f"SMB setup initiated at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # Get network information
-        logger.debug("Getting primary network interface")
-        ret_code, interface_output, error = self.run_command("ip route get 8.8.8.8 | grep -oP '(?<=dev\\s)\\w+' | head -1", shell=True)
-        if ret_code != 0:
-            logger.error(f"Failed to get network interface: {error}")
-            logger.debug(f"Interface detection command returned non-zero exit code: {ret_code}")
-        interface = interface_output.strip()
-        logger.debug(f"Detected network interface: '{interface}'")
+        # Define the path to the SMB environment file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(os.path.dirname(script_dir))
+        smb_env_path = os.path.join(root_dir, "secrets", ".smb-env")
 
-        logger.debug(f"Getting IP address for interface {interface}")
-        ret_code, ip_addr_output, error = self.run_command(f"ip -4 addr show {interface} | grep -oP '(?<=inet\\s)\\d+(\.\\d+){{3}}'", shell=True)
-        if ret_code != 0:
-            logger.error(f"Failed to get IP address: {error}")
-            logger.debug(f"IP address detection command returned non-zero exit code: {ret_code}")
-        ip_addr = ip_addr_output.strip()
-        logger.debug(f"Detected IP address: '{ip_addr}'")
+        # Check if the SMB env file exists
+        if not os.path.exists(smb_env_path):
+            logger.info(f"SMB environment file not found at {smb_env_path}, creating template...")
+            os.makedirs(os.path.dirname(smb_env_path), exist_ok=True)
+            
+            # Create a template .smb-env file using the current format
+            with open(smb_env_path, "w") as f:
+                f.write("""# SMB/CIFS shares configuration
 
-        logger.debug(f"Getting netmask for interface {interface}")
-        ret_code, netmask_output, error = self.run_command(f"ip -4 addr show {interface} | grep -oP '(?<=inet\\s)\\d+(\.\\d+){{3}}/\\d+' | cut -d '/' -f 2", shell=True)
-        if ret_code != 0:
-            logger.error(f"Failed to get netmask: {error}")
-            logger.debug(f"Netmask detection command returned non-zero exit code: {ret_code}")
-        netmask = netmask_output.strip()
-        logger.debug(f"Detected netmask: '{netmask}'")
+# SMB Host 1
+SMB_HOST_1=server1.home.arpa
+SMB_HOST_1_USER=myuser
+SMB_HOST_1_PW=mypassword
+SMB_HOST_1_SHARE_1=share1
+SMB_HOST_1_SHARE_2=share2
 
-        logger.debug(f"Calculating subnet using IP {ip_addr} and netmask {netmask}")
-        ret_code, subnet_output, error = self.run_command(f"ipcalc -n {ip_addr}/{netmask} | grep Network | awk '{{print $2}}'", shell=True)
-        if ret_code != 0:
-            logger.error(f"Failed to calculate subnet: {error}")
-            logger.debug(f"Subnet calculation command returned non-zero exit code: {ret_code}")
-        subnet = subnet_output.strip()
-        logger.debug(f"Calculated subnet: '{subnet}'")
-
-        logger.info(f"Using interface {interface} with IP {ip_addr}")
-        logger.info(f"Scanning subnet {subnet} for SMB/CIFS shares...")
-        logger.debug(f"Network configuration complete, proceeding with subnet scan")
-
-        # Show SMB client version
-        self.run_command("smbclient --version", shell=True, check=False)
-
-        # Scan for hosts with open SMB ports
-        _, hosts_output, _ = self.run_command(f"nmap -sS -p 139,445 {subnet} -oG - | grep '/open' | cut -d ' ' -f 2", shell=True)
-        hosts = hosts_output.strip().split("\n") if hosts_output else []
-
-        if not hosts:
-            logger.info("No hosts with open SMB ports found.")
+# SMB Host 2
+SMB_HOST_2=server2.home.arpa
+SMB_HOST_2_USER=otheruser
+SMB_HOST_2_PW=otherpassword
+SMB_HOST_2_SHARE_1=othershare
+""")
+            logger.info(f"Template created. Please edit {smb_env_path} with your share information and re-run the script.")
             return
 
-        logger.info("\nDiscovered hosts with potential SMB shares:")
-        logger.info("---------------------------------------------")
-
-        host_list = []
-        host_name_list = []
-
-        # Get information about each discovered host
-        for i, host in enumerate(hosts, 1):
-            if not host:
-                continue
-
-            _, short_hostname_output, _ = self.run_command(f"nmblookup -A {host} | grep '<00>' | grep -v '<GROUP>' | awk '{{print $1}}'", shell=True, check=False)
-            short_hostname = short_hostname_output.strip() or "Unknown"
-
-            _, full_hostname_output, _ = self.run_command(f"host {host} 2>/dev/null | grep 'domain name pointer' | awk '{{print $5}}' | sed 's/\.$//'", shell=True, check=False)
-            full_hostname = full_hostname_output.strip()
-
-            if not full_hostname:
-                _, domain_output, _ = self.run_command("grep '^search\|^domain' /etc/resolv.conf | head -1 | cut -d' ' -f2- | tr -d '\n'", shell=True, check=False)
-                domain = domain_output.strip()
-
-                if domain and short_hostname != "Unknown":
-                    potential_full_hostname = f"{short_hostname}.{domain}"
-                    _, host_check, _ = self.run_command(f"host {potential_full_hostname} >/dev/null 2>&1", shell=True, check=False)
-                    if host_check == 0:  # Success
-                        full_hostname = potential_full_hostname
-
-            hostname = full_hostname if full_hostname else short_hostname
-
-            # Use ANSI colors to highlight network share names
-            logger.info(f"{i}) \033[1;36m{host}\033[0m (\033[1;32m{hostname}\033[0m)")
-            host_list.append(host)
-            host_name_list.append(hostname)
-
-        # Let user select a host - use colors to make input prompt clearer
-        logger.info(f"\n{yellow('Which host would you like to examine? (enter number or press ENTER to skip)')}", {'color': True})
-        logger.debug("Prompting user for host selection")
-        selection = input()
-        logger.debug(f"User entered: '{selection}'")
-
-        # Allow skipping the host selection by pressing Enter
-        if not selection.strip():
-            logger.info("Skipping SMB share discovery and mounting.")
-            logger.debug("User chose to skip by pressing ENTER, exiting SMB discovery function")
-            return
-
+        # Read the configuration file
+        shares_config = []
+        env_vars = {}
+        hosts = []
         try:
-            selection_idx = int(selection) - 1
-            logger.debug(f"Parsed selection index: {selection_idx}, valid range is 0-{len(host_list)-1}")
-
-            if selection_idx < 0 or selection_idx >= len(host_list):
-                logger.error(f"{red('Invalid selection.')}", {'color': True})
-                logger.debug(f"Selection index {selection_idx} is out of valid range 0-{len(host_list)-1}")
-                return
-
-            logger.debug(f"Valid selection: {selection_idx+1}, corresponding to host {host_list[selection_idx]}")
-        except ValueError as e:
-            logger.error(f"{red('Invalid selection.')}", {'color': True})
-            logger.debug(f"Failed to parse selection as integer: {str(e)}")
-            return
-
-        selected_host = host_list[selection_idx]
-        selected_hostname = host_name_list[selection_idx]
-
-        logger.info(f"\nExamining shares on \033[1;36m{selected_host}\033[0m (\033[1;32m{selected_hostname}\033[0m)")
-
-        # Try to connect with different SMB versions
-        username = ""
-        password = ""
-        auth_success = False
-        share_output = ""
-
-        # Try anonymous connection with different SMB versions
-        for version in ["", "3.0", "2.1", "2.0", "1.0"]:
-            smb_version_opt = f"--option=client min protocol=SMB{version}" if version else ""
-
-            cmd = f"smbclient -L //{selected_host} -N {smb_version_opt}"
-            _, anon_result, _ = self.run_command(cmd, shell=True, check=False)
-
-            if "Anonymous login successful" in anon_result or "failed" not in anon_result:
-                # Process share list from the output
-                share_output = "\n".join(re.findall(r'.*Disk.*|.*Printer.*', anon_result))
-                share_output = re.sub(r'.*print\$.*', '', share_output).strip()
-
-                if share_output:
-                    # Found shares with anonymous authentication
-                    auth_success = True
-                    break
-                # Don't show "no shares found" message as requested
-
-        # If anonymous connection failed, try authenticated
-        if not auth_success:
-            max_auth_attempts = 3
-            auth_attempt = 1
-
-            while auth_attempt <= max_auth_attempts and not auth_success:
-                # Use colors to highlight the credential input prompt
-                logger.info(f"{yellow(f'Enter username (attempt {auth_attempt}/{max_auth_attempts}):')}",
-                         {'color': True})
-                username = input()
-
-                logger.info(f"{yellow('Enter password:')}",
-                         {'color': True})
-                password = getpass.getpass("")
-
-                logger.info(f"Attempting authenticated access as {username}...")
-
-                for version in ["", "3.0", "2.1", "2.0", "1.0"]:
-                    smb_version_opt = f"--option=client min protocol=SMB{version}" if version else ""
-
-                    cmd = f"smbclient -L //{selected_host} -U '{username}%{password}' {smb_version_opt}"
-                    rc, auth_result, auth_error = self.run_command(cmd, shell=True, check=False)
-
-                    # Debug level only, don't show to user
-                    logger.debug(f"SMB connection attempt with version {version or 'default'}: Return code {rc}")
-                    if auth_error:
-                        logger.debug(f"SMB error: {auth_error}")
-                    if auth_result:
-                        logger.debug(f"SMB results: {auth_result}")
-
-                    if not any(x in auth_result for x in ["session setup failed", "NT_STATUS_LOGON_FAILURE", "NT_STATUS_ACCESS_DENIED"]):
-                        share_output = "\n".join(re.findall(r'.*Disk.*|.*Printer.*', auth_result))
-                        share_output = re.sub(r'.*print\$.*', '', share_output).strip()
-
-                        if share_output:
-                            # Only show this message once for successful authentication
-                            if not auth_success:
-                                version_text = version or 'default'
-                                logger.info(f"{green(f'Authentication successful with SMB{version_text}')}",
-                                         {'color': True})
-                            auth_success = True
-                            break
-
-                # If still not successful and not at max attempts, ask to try again
-                if not auth_success:
-                    if auth_attempt < max_auth_attempts:
-                        logger.info(f"{red('Authentication failed.')} {yellow('Would you like to try different credentials? (y/n)')}",
-                                 {'color': True})
-                        retry = input().lower()
-                        if retry != 'y':
-                            logger.info("Aborting SMB share discovery.")
-                            return
-                    auth_attempt += 1
-
-            # Final check if all attempts failed
-            if not auth_success:
-                logger.error(f"{red('Authentication failed after multiple attempts. No shares could be accessed.')}", {'color': True})
-                return
-
-        # Select a share to mount
-        if not auth_success:
-            logger.error("Unable to access any shares on this host.")
-            return
-
-        # Process share output
-        share_list = []
-        # If we have a successful auth, clean and display shares list
-        if auth_success:
-            # Filter out unwanted lines and clean up the output
-            share_lines = [line for line in share_output.split('\n') if line.strip() and not line.startswith("Available")]
-
-            # Extract share names and create a list for alphabetical sorting
-            temp_share_list = []
-            for line in share_lines:
-                parts = line.split()
-                if len(parts) > 0:
-                    share_name = parts[0]
-                    if share_name:
-                        temp_share_list.append(share_name)
-
-            # Sort alphabetically and display
-            temp_share_list.sort()
-            share_list = []  # Clear the list before adding sorted items
-            for idx, share_name in enumerate(temp_share_list, 1):
-                # Only display the share name without description
-                logger.info(f"{idx}) \033[1;35m{share_name}\033[0m")
-                share_list.append(share_name)
-
-        if not share_list:
-            logger.error("No accessible shares found.")
-            return
-
-        # Let user select one or more shares with colored prompt
-        logger.info("\n\033[1;33mEnter the number(s) of the share(s) you want to mount (separate multiple selections with space):\033[0m")
-        share_selection = input()
-
-        # Handle multiple selections
-        share_indices = []
-        try:
-            for idx in share_selection.split():
-                share_idx = int(idx) - 1
-                if share_idx < 0 or share_idx >= len(share_list):
-                    logger.error(f"Invalid selection: {idx}")
+            logger.debug(f"Reading SMB configuration from {smb_env_path}")
+            with open(smb_env_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    # Skip empty lines and comments
+                    if not line or line.startswith("#"):
+                        continue
+                    
+                    # Parse the environment variable format
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip()
+                        env_vars[key] = value
+                        
+                        # Detect host entries
+                        if key.startswith("SMB_HOST_") and "_USER" not in key and "_PW" not in key and "_SHARE_" not in key:
+                            host_num = key.split("SMB_HOST_")[1]
+                            if host_num not in hosts:
+                                hosts.append(host_num)
+        
+            # Process each host and its shares
+            for host_num in hosts:
+                host = env_vars.get(f"SMB_HOST_{host_num}")
+                username = env_vars.get(f"SMB_HOST_{host_num}_USER")
+                password = env_vars.get(f"SMB_HOST_{host_num}_PW")
+                
+                if not host or not username or not password:
+                    logger.warning(f"Missing required configuration for SMB_HOST_{host_num}")
                     continue
-                share_indices.append(share_idx)
-
-            if not share_indices:
-                logger.error("No valid selections made.")
-                return
-        except ValueError:
-            logger.error("Invalid selection format. Please use numbers separated by spaces.")
+                
+                # Find all shares for this host
+                share_count = 1
+                while True:
+                    share_key = f"SMB_HOST_{host_num}_SHARE_{share_count}"
+                    if share_key not in env_vars:
+                        break
+                    
+                    share_name = env_vars[share_key]
+                    shares_config.append({
+                        "host": host,
+                        "host_name": host,  # Using the hostname as the display name
+                        "share": share_name,
+                        "username": username,
+                        "password": password
+                    })
+                    share_count += 1
+                    
+        except Exception as e:
+            logger.error(f"Error reading SMB configuration: {str(e)}")
             return
 
-        selected_shares = [share_list[idx] for idx in share_indices]
+        if not shares_config:
+            logger.info("No SMB shares configured in the environment file.")
+            logger.info(f"Please edit {smb_env_path} with your share information and re-run the script.")
+            return
 
-        # No need to keep backward compatibility variable anymore
-
-        # Process each selected share
+        # Process each configured share
         mount_successful = False
+        for config in shares_config:
+            host = config["host"]
+            host_name = config["host_name"]
+            share_name = config["share"]
+            username = config["username"]
+            password = config["password"]
 
-        # Create a common credentials file for this host
-        creds_file = f"/etc/.smb_{selected_host.replace('.', '_')}"
-        logger.info(f"Creating credentials file for {selected_host}...")
+            logger.info(f"Processing share '{green(share_name)}' on {cyan(host)} ({cyan(host_name)})", {'color': True})
 
-        with open(creds_file, "w") as f:
-            if username:
-                f.write(f"username={username}\npassword={password}\n")
-            else:
-                f.write("username=guest\npassword=\n")
+            # Create a credentials file for this host
+            creds_file = f"/etc/.smb_{host.replace('.', '_')}"
+            logger.info(f"Creating credentials file for {host}...")
 
-        os.chmod(creds_file, 0o600)
-        self.run_command(f"chown root:root {creds_file}", shell=True)
-        logger.info(f"Credentials file created/updated at {creds_file}")
+            with open(creds_file, "w") as f:
+                if username:
+                    f.write(f"username={username}\npassword={password}\n")
+                else:
+                    f.write("username=guest\npassword=\n")
 
-        # Process each share
-        for share_name in selected_shares:
-            logger.info(f"\nProcessing share '\033[1;35m{share_name}\033[0m' on \033[1;36m{selected_host}\033[0m")
-
-            # List contents of the share
-            if not username:
-                self.run_command(f"smbclient '//{selected_host}/{share_name}' -N -c 'ls'", shell=True, check=False)
-            else:
-                self.run_command(f"smbclient '//{selected_host}/{share_name}' -U '{username}%{password}' -c 'ls'", shell=True, check=False)
+            os.chmod(creds_file, 0o600)
+            self.run_command(f"chown root:root {creds_file}", shell=True)
+            logger.debug(f"Credentials file created at {creds_file}")
 
             # Create mount point
             mount_point = f"/mnt/{share_name}"
@@ -1091,13 +926,13 @@ AllowUsers {self.current_non_root_user} root
                     logger.info("Mount point already exists with correct ownership and permissions.")
 
             # Add to fstab
-            fstab_entry = f"//{selected_host}/{share_name} {mount_point} cifs credentials={creds_file},x-gvfs-show,uid={self.current_non_root_user},gid={self.current_non_root_user} 0 0"
+            fstab_entry = f"//{host}/{share_name} {mount_point} cifs credentials={creds_file},x-gvfs-show,uid={self.current_non_root_user},gid={self.current_non_root_user} 0 0"
 
             # Check if entry already exists
             with open("/etc/fstab", "r") as f:
                 fstab_content = f.read()
 
-            if f"//{selected_host}/{share_name} {mount_point}" not in fstab_content:
+            if f"//{host}/{share_name} {mount_point}" not in fstab_content:
                 logger.info("Adding CIFS mount to fstab...")
                 with open("/etc/fstab", "a") as f:
                     f.write(f"{fstab_entry}\n")
@@ -1106,7 +941,7 @@ AllowUsers {self.current_non_root_user} root
                 if fstab_entry not in fstab_content:
                     logger.info("Updating existing CIFS mount entry in fstab...")
                     new_fstab = re.sub(
-                        f"^.*//{selected_host}/{share_name} {mount_point}.*$",
+                        f"^.*//{host}/{share_name} {mount_point}.*$",
                         fstab_entry,
                         fstab_content,
                         flags=re.MULTILINE
@@ -1116,76 +951,54 @@ AllowUsers {self.current_non_root_user} root
                 else:
                     logger.info("CIFS mount entry already exists in fstab.")
 
-            # Try to mount
-            max_retries = 3
-            retry_count = 0
-            share_mount_success = False
-
             # Check if already mounted
             _, mount_check, _ = self.run_command(f"mount | grep {mount_point}", shell=True, check=False)
             if mount_point in mount_check:
                 logger.info(f"{green('Filesystem is already mounted.')}", {'color': True})
                 share_mount_success = True
                 mount_successful = True
+                continue
 
-            while retry_count < max_retries and not share_mount_success:
-                logger.info(f"{blue(f'Attempting to mount {share_name} (attempt {retry_count + 1}/{max_retries})...')}", {'color': True})
+            # Try to mount
+            share_mount_success = False
+            logger.info(f"{blue(f'Attempting to mount {share_name}...')}", {'color': True})
 
-                # Try with explicit SMB versions
-                for vers in ["3.0", "2.0", "1.0"]:
-                    mount_cmd = f"mount -t cifs '//{selected_host}/{share_name}' '{mount_point}' -o 'credentials={creds_file},vers={vers},uid={self.current_non_root_user},gid={self.current_non_root_user}'"
-                    rc, mount_stdout, mount_stderr = self.run_command(mount_cmd, shell=True, check=False)
+            # Try with explicit SMB versions
+            for vers in ["3.0", "2.0", "1.0"]:
+                mount_cmd = f"mount -t cifs '//{host}/{share_name}' '{mount_point}' -o 'credentials={creds_file},vers={vers},uid={self.current_non_root_user},gid={self.current_non_root_user}'"
+                rc, mount_stdout, mount_stderr = self.run_command(mount_cmd, shell=True, check=False)
 
-                    # Add detailed debugging info at debug level
-                    logger.debug(f"Mount attempt with SMB v{vers}: Return code {rc}")
-                    if mount_stderr:
-                        logger.debug(f"Mount error: {mount_stderr}")
-                    if mount_stdout:
-                        logger.debug(f"Mount output: {mount_stdout}")
+                # Add detailed debugging info at debug level
+                logger.debug(f"Mount attempt with SMB v{vers}: Return code {rc}")
+                if mount_stderr:
+                    logger.debug(f"Mount error: {mount_stderr}")
+                if mount_stdout:
+                    logger.debug(f"Mount output: {mount_stdout}")
 
-                    if rc == 0:
-                        logger.info(f"{green(f'Mount of {share_name} successful with SMB v{vers}!')}", {'color': True})
-                        share_mount_success = True
-                        mount_successful = True
-                        break
-                    else:
-                        logger.debug(f"Mount with SMB v{vers} failed.")
+                if rc == 0:
+                    logger.info(f"{green(f'Mount of {share_name} successful with SMB v{vers}!')}", {'color': True})
+                    share_mount_success = True
+                    mount_successful = True
+                    break
 
-                if not share_mount_success:
-                    # Give option to retry with different credentials
-                    if retry_count < max_retries - 1:
-                        logger.warning(f"{yellow(f'Mount attempts for {share_name} failed. Would you like to try different credentials? (y/n)')}", {'color': True})
-                        retry_choice = input().lower()
-                        if retry_choice == 'y':
-                            logger.info(f"{yellow('Enter username:')}", {'color': True})
-                            username = input()
-                            logger.info(f"{yellow('Enter password:')}", {'color': True})
-                            password = getpass.getpass("")
+            if not share_mount_success:
+                logger.error(f"{red(f'WARNING: Failed to mount {share_name}')}", {'color': True})
+                logger.error(f"{yellow('Please check your configuration, network connectivity, and credentials.')}", {'color': True})
+                logger.error(f"{yellow(f'You can manually mount the share later using: sudo mount {mount_point}')}", {'color': True})
+                logger.error(f"{yellow(f'The share will be automatically mounted at system startup due to the automount service.')}", {'color': True})
 
-                            # Update credentials file
-                            logger.info(f"Updating credentials file for {selected_host}...")
-                            with open(creds_file, "w") as f:
-                                f.write(f"username={username}\npassword={password}\n")
-                            os.chmod(creds_file, 0o600)
-                        else:
-                            # If user doesn't want to retry with new credentials, increment retry count to maximum
-                            retry_count = max_retries - 1
-                    retry_count += 1
-
-                if not share_mount_success:
-                    logger.error(f"{red(f'WARNING: Failed to mount {share_name} after {max_retries} attempts.')}", {'color': True})
-                    logger.error(f"{yellow('Please check your configuration, network connectivity, and credentials.')}", {'color': True})
-                    logger.error(f"{yellow(f'You can manually mount the share later using: sudo mount {mount_point}')}", {'color': True})
-
-        # If at least one mount was successful, ask if the user wants to scan another host
+        # Report overall status
         if mount_successful:
-            logger.info(f"\n{yellow('Would you like to scan another host for SMB shares? (y/N)')}", {'color': True})
-            scan_another = input().lower()
-            if scan_another == 'y':
-                self.discover_smb_shares()
+            logger.info(f"{green('Successfully mounted one or more SMB shares.')}", {'color': True})
+        else:
+            logger.warning(f"{yellow('Failed to mount any SMB shares. They will be attempted at system startup.')}", {'color': True})
 
+        # Ensure the credentials files and passwords aren't accessible
+        self.run_command("find /etc -name '.smb_*' -exec chmod 600 {} \\;", shell=True)
+        
         # Clear password from memory
-        password = ""
+        for config in shares_config:
+            config["password"] = ""
 
     def setup_security_updates(self):
         """Setup automatic security updates"""
