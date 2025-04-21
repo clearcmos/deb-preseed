@@ -95,6 +95,9 @@ NETWORK_IP=192.168.1.3
 NETWORK_GATEWAY=192.168.1.1
 NETWORK_DNS=192.168.1.1
 NETWORK_NETMASK=255.255.255.0
+
+# Packages to install (space-separated list)
+PACKAGES="apt-listchanges ca-certificates cifs-utils cockpit curl dos2unix fzf git gnupg htop ipcalc jq ncdu nmap openssh-server pkg-config python3 rclone rsync samba-common-bin smbclient sudo timeshift wget"
 EOF
   chown "$ORIGINAL_USER:$ORIGINAL_USER" "$HOST_ENV_FILE"
   warn "Created $HOST_ENV_FILE. Please fill it in and re-run."
@@ -103,9 +106,11 @@ fi
 set -a && source "$HOST_ENV_FILE" && set +a
 
 # Validate network settings
-for var in NETWORK_HOSTNAME NETWORK_DOMAIN NETWORK_IP NETWORK_GATEWAY NETWORK_DNS NETWORK_NETMASK; do
+for var in NETWORK_HOSTNAME NETWORK_DOMAIN NETWORK_IP NETWORK_GATEWAY NETWORK_DNS NETWORK_NETMASK PACKAGES; do
   [[ -z "${!var}" ]] && error "$var is not set in $HOST_ENV_FILE"
 done
+
+info "Packages to install: $PACKAGES"
 
 info "Network settings loaded for $SELECTED_HOST:"
 info "  HOSTNAME=$NETWORK_HOSTNAME"
@@ -175,6 +180,7 @@ sed \
   -e "s|\${network_netmask}|$(printf '%s' "$NETWORK_NETMASK" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${network_gateway}|$(printf '%s' "$NETWORK_GATEWAY" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${network_dns}|$(printf '%s' "$NETWORK_DNS" | sed 's|[&]|\\&|g')|g" \
+  -e "s|\${packages}|$(printf '%s' "$PACKAGES" | sed 's|[&]|\\&|g')|g" \
   "$PRESEED_PATH" > "$TMP_PRESEED"
 cp "$TMP_PRESEED" "$WORK/extracted/preseed.cfg"
 rm "$TMP_PRESEED"
