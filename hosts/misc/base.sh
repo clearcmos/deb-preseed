@@ -252,30 +252,76 @@ setup_docker_repository() {
   # Add Docker's GPG key
   if [[ ! -f "/etc/apt/keyrings/docker.gpg" ]]; then
     log_info "Adding Docker's official GPG key..."
-    curl_cmd="curl -fsSL https://download.docker.com/linux/debian/gpg"
-    gpg_cmd="gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
-    
-    parse_output "$(run_command "$curl_cmd | $gpg_cmd" "true")"
-    parse_output "$(run_command "chmod a+r /etc/apt/keyrings/docker.gpg" "true")"
+    log_debug "Executing Docker GPG key download with verbose output"
+    # Split the command into separate curl and gpg steps for better debugging
+    parse_output "$(run_command "curl -fsSL -v https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg" "true")"
+    if [[ $RET_CODE -eq 0 ]]; then
+      log_info "Docker GPG key download successful, running gpg command..."
+      parse_output "$(run_command "cat /tmp/docker.gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg" "true")"
+      parse_output "$(run_command "chmod a+r /etc/apt/keyrings/docker.gpg" "true")"
+      # Clean up temporary file
+      parse_output "$(run_command "rm /tmp/docker.gpg" "true")"
+    else
+      log_error "Failed to download Docker GPG key: $STDERR"
+      log_info "Skipping Docker repository setup"
+    fi
   fi
   
   # Add Docker repository
   log_info "Adding Docker repository to apt sources..."
   
+  # Check if Docker GPG key was successfully added
+  if [[ ! -f "/etc/apt/keyrings/docker.gpg" ]]; then
+    log_error "Docker GPG key not found, skipping repository setup"
+    return 1
+  fi
+  
   # Get distribution codename
   parse_output "$(run_command ". /etc/os-release && echo \"$VERSION_CODENAME\"" "true")"
   local codename="$STDOUT"
+  
+  # If codename is empty or failed, try another approach
+  if [[ -z "$codename" ]]; then
+    log_warning "Failed to get distribution codename from os-release, trying lsb_release"
+    parse_output "$(run_command "lsb_release -cs" "true" "false")"
+    codename="$STDOUT"
+    
+    # If still empty, use a default
+    if [[ -z "$codename" ]]; then
+      log_warning "Could not determine distribution codename, using 'bullseye' as default"
+      codename="bullseye"
+    fi
+  fi
+  
+  log_info "Using distribution codename: $codename"
   
   # Get architecture
   parse_output "$(run_command "dpkg --print-architecture" "true")"
   local arch="$STDOUT"
   
+  if [[ -z "$arch" ]]; then
+    log_warning "Could not determine architecture, using 'amd64' as default"
+    arch="amd64"
+  fi
+  
+  log_info "Using architecture: $arch"
+  
   local docker_repo="deb [arch=$arch signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $codename stable"
   
-  echo "$docker_repo" > "/etc/apt/sources.list.d/docker.list"
+  # Write to temporary file first to avoid permission issues
+  echo "$docker_repo" > "/tmp/docker.list"
+  parse_output "$(run_command "mv /tmp/docker.list /etc/apt/sources.list.d/docker.list" "true")"
   
-  # Update apt
-  parse_output "$(run_command "apt update" "true")"
+  # Update apt with error handling
+  log_info "Updating apt package lists..."
+  parse_output "$(run_command "apt update" "true" "false")"
+  
+  if [[ $RET_CODE -ne 0 ]]; then
+    log_error "apt update failed: $STDERR"
+    log_info "Continuing with script execution..."
+  else
+    log_info "apt update completed successfully"
+  fi
 }
 
 # Display package menu for selection
