@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Check if running as root/sudo
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run as root. Restarting with sudo..."
+    exec sudo "$0" "$@"
+    exit 1  # This line should never execute
+fi
+
+# Capture the original user that started the script (even if through sudo)
+if [[ -n "${SUDO_USER:-}" ]]; then
+    ORIGINAL_USER="$SUDO_USER"
+    ORIGINAL_UID=$(id -u "$ORIGINAL_USER")
+    ORIGINAL_GID=$(id -g "$ORIGINAL_USER")
+else
+    ORIGINAL_USER=$(whoami)
+    ORIGINAL_UID=$(id -u)
+    ORIGINAL_GID=$(id -g)
+fi
+
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
@@ -8,6 +26,25 @@ info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
 success() { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERR]${NC} $*"; exit 1; }
+
+# Check for required packages
+required_packages=(wget xorriso isolinux)
+missing_packages=()
+
+# Check invisibly if packages are installed
+for pkg in "${required_packages[@]}"; do
+  if ! dpkg -l | grep -q "ii  $pkg "; then
+    missing_packages+=("$pkg")
+  fi
+done
+
+# Install missing packages if any
+if [[ ${#missing_packages[@]} -gt 0 ]]; then
+  info "Installing required packages: ${missing_packages[*]}"
+  apt-get update
+  apt-get install -y "${missing_packages[@]}"
+  success "Required packages installed successfully"
+fi
 
 # Check if preseed.cfg exists in the root directory
 PRESEED_PATH="common/preseed.cfg"
@@ -30,6 +67,7 @@ USER_PASSWORD=
 SSH_AUTHORIZED_KEY=
 ISO_MOVE=
 EOF
+  chown "$ORIGINAL_USER:$ORIGINAL_USER" "$ENV_FILE"
   warn "Created $ENV_FILE. Please fill it in and re-run."
   exit 0
 fi
@@ -56,10 +94,10 @@ mkdir -p "$WORK"/{iso,extracted}
 
 # Mount and extract
 info "Mounting ISO..."
-sudo mount -o loop "$ISO_ORIG" "$WORK/iso"
+mount -o loop "$ISO_ORIG" "$WORK/iso"
 info "Copying files..."
-sudo cp -rT "$WORK/iso" "$WORK/extracted"
-sudo umount "$WORK/iso"
+cp -rT "$WORK/iso" "$WORK/extracted"
+umount "$WORK/iso"
 
 # Substitute secrets into preseed
 info "Injecting secrets into preseed.cfg..."
@@ -71,39 +109,39 @@ sed \
   -e "s|\${userpassword}|$(printf '%s' "$USER_PASSWORD" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${ssh_authorized_key}|$(printf '%s' "$SSH_AUTHORIZED_KEY" | sed 's|[&]|\\&|g')|g" \
   "$PRESEED_PATH" > "$TMP_PRESEED"
-sudo cp "$TMP_PRESEED" "$WORK/extracted/preseed.cfg"
+cp "$TMP_PRESEED" "$WORK/extracted/preseed.cfg"
 rm "$TMP_PRESEED"
 
 # Update bootloader for fully automated boot
 info "Configuring isolinux..."
 ISOLINUX_CFG="$WORK/extracted/isolinux/isolinux.cfg"
-sudo sed -i 's/^timeout .*/timeout 0/; s/^prompt .*/prompt 0/; s/^default .*/default auto/' "$ISOLINUX_CFG"
-sudo bash -c "cat > $WORK/extracted/isolinux/txt.cfg << 'EOF'
+sed -i 's/^timeout .*/timeout 0/; s/^prompt .*/prompt 0/; s/^default .*/default auto/' "$ISOLINUX_CFG"
+cat > "$WORK/extracted/isolinux/txt.cfg" << 'EOF'
 default auto
 label auto
   menu default
   kernel /install.amd/vmlinuz
   append auto=true priority=critical noprompt preseed/file=/cdrom/preseed.cfg vga=788 initrd=/install.amd/initrd.gz quiet ---
-EOF"
+EOF
 
 info "Configuring GRUB..."
 GRUB_CFG="$WORK/extracted/boot/grub/grub.cfg"
-sudo sed -i 's/set timeout=.*/set timeout=0/; s/set timeout_style=.*/set timeout_style=hidden/' "$GRUB_CFG"
-sudo bash -c "cat > ${GRUB_CFG}.new << 'EOF'
+sed -i 's/set timeout=.*/set timeout=0/; s/set timeout_style=.*/set timeout_style=hidden/' "$GRUB_CFG"
+cat > "${GRUB_CFG}.new" << 'EOF'
 set default=0
 set timeout=0
-menuentry \"Automated Install\" {
+menuentry "Automated Install" {
   linux /install.amd/vmlinuz auto=true priority=critical noprompt preseed/file=/cdrom/preseed.cfg vga=788 quiet ---
   initrd /install.amd/initrd.gz
 }
-EOF"
-sudo mv "${GRUB_CFG}.new" "$GRUB_CFG"
+EOF
+mv "${GRUB_CFG}.new" "$GRUB_CFG"
 
 # Build new ISO
 info "Building custom ISO..."
 VERSION=$(echo "$ISO_ORIG" | grep -oP 'debian-\K[0-9.]+')
 NEW_ISO="debian-${VERSION}-automated-misc.iso"
-sudo xorriso -as mkisofs -r -J -joliet-long -l \
+xorriso -as mkisofs -r -J -joliet-long -l \
   -iso-level 3 \
   -partition_offset 16 \
   -V "DEBIAN AUTOINSTALL" \
@@ -118,7 +156,8 @@ sudo xorriso -as mkisofs -r -J -joliet-long -l \
   -output "$NEW_ISO" \
   "$WORK/extracted"
 
-sudo chown "$(id -u):$(id -g)" "$NEW_ISO"
+# Set correct ownership of the ISO to the original user
+chown "$ORIGINAL_UID:$ORIGINAL_GID" "$NEW_ISO"
 success "ISO created: $NEW_ISO"
 
 # Optional: move it

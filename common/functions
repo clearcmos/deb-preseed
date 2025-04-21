@@ -1,0 +1,125 @@
+getsecrets() {
+    # Check if running as root
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "This function needs root privileges to write to /etc. Re-executing with sudo..."
+        # Re-execute the function with sudo
+        sudo bash -c "$(declare -f getsecrets); getsecrets"
+        return $?
+    fi
+    
+    local target_dir="/etc/secrets"
+    local success_count=0
+    
+    # Prompt for password
+    echo -n "Enter decryption password: "
+    read -s password
+    echo  # Add a newline after password input
+    
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    local temp_counter_file="${temp_dir}/counter"
+    echo "0" > "$temp_counter_file"
+    
+    # Download files from the secrets subdirectory to temporary directory
+    smbclient //192.168.1.4/deployment -U 'guest%' -c "cd secrets; recurse ON; prompt OFF; lcd $temp_dir; mget *"
+    
+    # Process and decrypt files
+    while IFS= read -r file; do
+        local filename
+        filename=$(basename "$file")
+        
+        # Skip the counter file we just created
+        if [[ "$filename" == "counter" ]]; then
+            continue
+        fi
+        
+        # Process all files in the secrets folder
+        local decrypted_filename="$filename"
+        local temp_decrypted_file="${temp_dir}/${decrypted_filename}.decrypted"
+        
+        # Try to decrypt to a temporary file first using the same command as the Python script
+        if openssl enc -aes-256-cbc -d -salt -pbkdf2 -iter 100000 -in "$file" -out "$temp_decrypted_file" -pass pass:"$password" 2>/dev/null; then
+            # Only create target directory if we have at least one successful decryption
+            [ ! -d "$target_dir" ] && mkdir -p "$target_dir"  # No need for sudo since we're already root
+            mv "$temp_decrypted_file" "$target_dir/$decrypted_filename"  # No need for sudo since we're already root
+            echo "Successfully decrypted: $filename"
+            # Increment the counter in the file
+            local current_count
+            current_count=$(cat "$temp_counter_file")
+            echo $((current_count + 1)) > "$temp_counter_file"
+        else
+            echo "Failed to decrypt: $file" >&2
+            rm -f "$temp_decrypted_file"  # Clean up failed decryption attempt
+        fi
+    done < <(find "$temp_dir" -type f)
+    
+    # Read the final count
+    success_count=$(cat "$temp_counter_file")
+    
+    # Clean up temporary directory
+    rm -rf "$temp_dir"
+    
+    # Report results
+    if [ $success_count -eq 0 ]; then
+        echo "No files were successfully decrypted" >&2
+        return 1
+    else
+        echo "$success_count file(s) successfully decrypted to $target_dir"
+        return 0
+    fi
+}
+
+goto() {
+    local file_path=$(fzf --select-1 --exit-0)
+
+    if [ -z "$file_path" ]; then
+        echo "No file selected."
+        return 1
+    fi
+
+    local dir_path=$(dirname "$file_path")
+
+    cd "$dir_path" || return
+}
+
+n() {
+    if [ -z "$1" ]; then
+        nano $(fzf)
+    else
+        (cd "$1" && nano $(fzf))
+    fi
+}
+
+port() {
+    echo "Checking open files with port $1..."
+    echo ""
+    sudo lsof -i TCP:$1 -i UDP:$1 | awk 'NR==1 {print} /TCP.*LISTEN|UDP/'
+    echo ""
+
+    echo "Searching in /etc/nginx/sites-available/ for port $1..."
+    echo ""
+    grep -rnH "$1" /etc/nginx/sites-available/ | cut -d: -f1-3
+    echo ""
+
+    echo "Checking Docker containers for port $1..."
+    echo ""
+    docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Ports}}" | grep "$1"
+    echo ""
+}
+
+pw() {
+  default_length=40
+
+  if [[ $1 == "n" ]]; then
+    read -p "Enter desired password length: " characters
+  else
+    read -p "Generating new string... Press Enter for 40 characters / Press n to specify number of characters: " confirm
+    if [[ $confirm == "n" ]]; then
+      read -p "Enter desired string length: " characters
+    else
+      characters=$default_length
+    fi
+  fi
+
+  openssl rand -base64 $characters
+}
