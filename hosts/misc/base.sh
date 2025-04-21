@@ -89,8 +89,6 @@ log_error() {
 # Global variables
 ERROR_FLAG=false
 CURRENT_NON_ROOT_USER=""
-DOCKER_AVAILABLE=false
-DOCKER_INSTALLED=false
 USERMOD_AVAILABLE=true
 
 # Run a command and log the output
@@ -238,46 +236,8 @@ detect_non_root_user() {
   fi
 }
 
-# Set up Docker repository - Simplified to use standard repos only
-setup_docker_repository() {
-  log_info "Docker setup: Using standard Debian repositories"
-  # No need for external Docker repos
-  
-  # Get distribution codename - use lsb_release directly as it's more reliable
-  parse_output $(run_command "lsb_release -cs" "true" "false")
-  local codename="$STDOUT"
-  
-  # If empty, try alternative method
-  if [[ -z "$codename" ]]; then
-    parse_output $(run_command ". /etc/os-release && echo \"$VERSION_CODENAME\"" "true")
-    codename="$STDOUT"
-    
-    # If still empty, use a default
-    if [[ -z "$codename" ]]; then
-      # Use a more sensible default for newer systems
-      codename="bookworm"
-    fi
-  fi
-  
-  log_info "Using distribution codename: $codename"
-  
-  # Get architecture
-  parse_output $(run_command "dpkg --print-architecture" "true")
-  local arch="$STDOUT"
-  
-  if [[ -z "$arch" ]]; then
-    log_warning "Could not determine architecture, using 'amd64' as default"
-    arch="amd64"
-  fi
-  
-  log_info "Using architecture: $arch"
-  
-  local docker_repo="deb [arch=$arch signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $codename stable"
-  
-  # Write to temporary file first to avoid permission issues
-  echo "$docker_repo" > "/tmp/docker.list"
-  parse_output $(run_command "mv /tmp/docker.list /etc/apt/sources.list.d/docker.list" "true")
-  
+# Setup repositories for package installation
+setup_repositories() {
   # Update apt with error handling
   log_info "Updating apt package lists..."
   parse_output $(run_command "apt update" "true" "false")
@@ -294,13 +254,8 @@ setup_docker_repository() {
 display_package_menu() {
   local packages=("$@")
   
-  # We don't need to handle Docker packages specially anymore
-  docker_count=0
-  declare -a docker_pkgs=()
-  
   # Debug info
   log_debug "Number of packages to display: ${#packages[@]}"
-  log_debug "Number of docker packages: ${#docker_pkgs[@]}"
   
   echo -e "\nPackage Selection Menu"
   echo "----------------------"
@@ -333,8 +288,14 @@ display_package_menu() {
     # Debug output for troubleshooting
     log_debug "Selection entered: '$selection'"
     
-    # Process comma-separated selections
-    IFS=',' read -ra selected_indices <<< "$selection"
+    # Check if the input has spaces, and handle as space-separated if so
+    if [[ "$selection" == *" "* ]]; then
+      log_debug "Space-separated format detected"
+      IFS=' ' read -ra selected_indices <<< "$selection"
+    else
+      # Process comma-separated selections
+      IFS=',' read -ra selected_indices <<< "$selection"
+    fi
     log_debug "Number of indices parsed: ${#selected_indices[@]}"
     
     for index in "${selected_indices[@]}"; do
@@ -385,7 +346,7 @@ display_package_menu() {
 
 # Install packages
 install_packages() {
-  # Always install these critical packages first
+  # Check for critical packages but don't show messages if already installed
   critical_pkgs=("sudo" "python3")
   for pkg in "${critical_pkgs[@]}"; do
     if ! is_installed "$pkg"; then
@@ -393,39 +354,17 @@ install_packages() {
       parse_output $(run_command "apt update" "true")
       parse_output $(run_command "apt install -y $pkg" "true")
     else
-      log_info "Critical package $pkg is already installed."
+      log_debug "Critical package $pkg is already installed."
     fi
   done
   
   # Base packages list (excluding critical packages and curl which should already be installed)
-  pkgs=(
-    "1password-cli"
-    "certbot"
-    "cmake"
-    "fail2ban"
-    "fdupes"
-    "ffmpeg"
-    "nginx"
-    "nodejs"
-    "npm"
-    "nvm"
-    "pandoc"
-  )
+  pkgs=()
   
   log_info "Initial package count: ${#pkgs[@]}"
   for pkg in "${pkgs[@]}"; do
     log_debug "Initial package: $pkg"
   done
-  
-  # Add docker.io instead of docker-ce (from standard repos)
-  pkgs+=("docker.io" "docker-compose-plugin")
-  log_info "Added Docker packages from standard repos"
-  DOCKER_AVAILABLE=true
-  docker_pkgs=()
-  
-  # Add Plex as an option regardless of whether it's in repositories
-  pkgs+=("plex")
-  log_info "Added Plex to packages"
   
   # Sort packages alphabetically
   log_info "Package count before sorting: ${#pkgs[@]}"
@@ -479,224 +418,7 @@ install_packages() {
   
   # Install selected packages
   for pkg in "${selected_pkgs[@]}"; do
-    if [[ "$pkg" == "plex" ]]; then
-      # Handle Plex Media Server installation
-      if ! is_installed "plexmediaserver"; then
-        log_info "Installing Plex Media Server..."
-        
-        # Add Plex repository (with minimal output)
-        log_info "Adding Plex repository..."
-        parse_output $(run_command "curl -fsSL https://downloads.plex.tv/plex-keys/PlexSign.key | gpg --dearmor | tee /usr/share/keyrings/plex.gpg > /dev/null" "true" "false")
-        parse_output $(run_command "echo \"deb [signed-by=/usr/share/keyrings/plex.gpg] https://downloads.plex.tv/repo/deb public main\" | tee /etc/apt/sources.list.d/plexmediaserver.list > /dev/null" "true" "false")
-        
-        # Update package list and install Plex
-        parse_output $(run_command "apt update > /dev/null" "true" "false")
-        parse_output $(run_command "apt install -y plexmediaserver" "true" "false")
-        
-        # Enable and start Plex Media Server
-        parse_output $(run_command "systemctl enable plexmediaserver" "true" "false")
-        parse_output $(run_command "systemctl start plexmediaserver" "true" "false")
-      else
-        log_info "Plex Media Server is already installed, skipping."
-      fi
-    elif [[ "$pkg" == "bitwarden-cli" ]]; then
-      # Handle Bitwarden CLI installation
-      log_info "Installing Bitwarden CLI..."
-      # First install build-essential package
-      if ! is_installed "build-essential"; then
-        log_info "Installing build-essential package for Bitwarden CLI..."
-        parse_output $(run_command "apt install -y build-essential" "true" "false")
-      fi
-      
-      # Make sure npm is installed
-      if ! is_installed "npm"; then
-        log_info "Installing npm for Bitwarden CLI..."
-        parse_output $(run_command "apt install -y npm" "true" "false")
-      fi
-      
-      # Install Bitwarden CLI using npm
-      log_info "Installing Bitwarden CLI using npm..."
-      parse_output $(run_command "npm install -g @bitwarden/cli" "true" "false")
-      log_info "Bitwarden CLI installation completed."
-    elif [[ "$pkg" == "1password-cli" ]]; then
-      # Handle 1Password CLI installation
-      log_info "Installing 1Password CLI..."
-      
-      # Update system packages
-      parse_output $(run_command "apt update" "true" "false")
-      
-      # Install required dependencies
-      parse_output $(run_command "apt install -y gnupg2 apt-transport-https ca-certificates software-properties-common" "true" "false")
-      
-      # Add the GPG key for the 1Password APT repository (with minimal output)
-      parse_output $(run_command "curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg" "true" "false")
-      
-      # Add the 1Password APT repository (with minimal output)
-      parse_output $(run_command "echo \"deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/amd64 stable main\" | tee /etc/apt/sources.list.d/1password.list > /dev/null" "true" "false")
-      
-      # Add the debsig-verify policy for verifying package signatures (with minimal output)
-      parse_output $(run_command "mkdir -p /etc/debsig/policies/AC2D62742012EA22/" "true" "false")
-      parse_output $(run_command "curl -fsSL https://downloads.1password.com/linux/debian/debsig/1password.pol | tee /etc/debsig/policies/AC2D62742012EA22/1password.pol > /dev/null" "true" "false")
-      parse_output $(run_command "mkdir -p /usr/share/debsig/keyrings/AC2D62742012EA22/" "true" "false")
-      parse_output $(run_command "curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | gpg --dearmor --output /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg" "true" "false")
-      
-      # Update package list and install 1Password CLI
-      parse_output $(run_command "apt update > /dev/null && apt install -y 1password-cli" "true" "false")
-      log_info "1Password CLI installation completed."
-    elif [[ "$pkg" == "nvm" ]]; then
-      # Handle NVM installation
-      log_info "Installing NVM (Node Version Manager)..."
-      
-      # Install NVM for the current non-root user
-      if [[ "$CURRENT_NON_ROOT_USER" != "root" ]]; then
-        # Get user's home directory
-        parse_output $(run_command "getent passwd $CURRENT_NON_ROOT_USER | cut -d: -f6" "true")
-        local user_home
-        user_home=$(echo "$STDOUT" | tr -d '[:space:]')
-        
-        log_info "Installing NVM for $CURRENT_NON_ROOT_USER (home: $user_home)..."
-        
-        # Ensure we explicitly set HOME environment variable for the non-root user
-        local nvm_install_cmd_user="sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash'"
-        parse_output $(run_command "$nvm_install_cmd_user" "true" "false")
-        
-        # Source NVM for the current non-root user with explicit HOME
-        local nvm_source_cmd_user="sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && export NVM_DIR=\"$user_home/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"'"
-        parse_output $(run_command "$nvm_source_cmd_user" "true" "false")
-        
-        # Update user's bashrc to automatically source NVM
-        local bashrc_path="$user_home/.bashrc"
-        if [[ -f "$bashrc_path" ]]; then
-          if ! grep -q "NVM_DIR" "$bashrc_path"; then
-            log_info "Adding NVM source commands to $CURRENT_NON_ROOT_USER's .bashrc..."
-            cat >> "$bashrc_path" << 'EOF'
-
-# NVM setup
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-EOF
-            # Source the updated bashrc
-            parse_output $(run_command "sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && source $bashrc_path'" "true" "false")
-          else
-            log_info "NVM source commands already exist in $CURRENT_NON_ROOT_USER's .bashrc"
-          fi
-        else
-          log_info "Couldn't find .bashrc for $CURRENT_NON_ROOT_USER, skipping automatic sourcing"
-        fi
-        
-        # Get latest Node.js version and install for the current non-root user with explicit HOME
-        local nvm_install_node_cmd_user="sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && export NVM_DIR=\"$user_home/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\" && nvm install node && nvm use node'"
-        parse_output $(run_command "$nvm_install_node_cmd_user" "true" "false")
-        
-        # Export NVM environment for the current script session
-        export NVM_DIR="$user_home/.nvm"
-        parse_output $(run_command "bash -c 'export HOME=\"$user_home\" && export NVM_DIR=\"$NVM_DIR\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"'" "true")
-      fi
-      
-      # Also install NVM for root (regardless of whether the current user is root or not)
-      log_info "Installing NVM for root user..."
-      
-      # Ensure root's home directory exists and is accessible
-      parse_output $(run_command "mkdir -p /root" "true")
-      
-      # Log instead of writing to a hardcoded path
-      log_debug "Starting NVM installation for root user"
-      
-      # List the root directory for debugging
-      parse_output $(run_command "ls -la /root" "true" "false")
-      
-      # Clear any existing NVM directory to ensure clean installation
-      parse_output $(run_command "rm -rf /root/.nvm" "true")
-      
-      # Explicitly set HOME to /root when installing NVM for root user
-      log_debug "Running NVM install command for root with explicit HOME"
-      
-      # Run the NVM installer with HOME explicitly set to /root
-      local nvm_install_cmd_root="export HOME=/root && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash"
-      parse_output $(run_command "$nvm_install_cmd_root" "true" "false")
-      
-      # Log the result of the NVM installation
-      log_debug "NVM install command for root returned code $RET_CODE"
-      if [[ -n "$STDOUT" ]]; then
-        log_debug "NVM stdout: $STDOUT"
-      fi
-      if [[ -n "$STDERR" ]]; then
-        log_debug "NVM stderr: $STDERR"
-      fi
-      
-      # Check if NVM directory was created in the correct location
-      parse_output $(run_command "ls -la /root/.nvm" "true" "false")
-      if [[ -n "$STDOUT" ]]; then
-        log_debug "NVM directory exists in /root/.nvm: $STDOUT"
-      else
-        log_debug "NVM directory NOT found in /root/.nvm"
-        
-        # If NVM directory wasn't created in /root/.nvm, check if it was created elsewhere
-        parse_output $(run_command "find / -name '.nvm' -type d 2>/dev/null" "true" "false")
-        log_debug "Found .nvm directories: $STDOUT"
-        
-        # Get current user's home directory instead of hardcoded path
-        local user_home
-        user_home=$(eval echo ~)
-        # If NVM was installed in current user's home instead, copy it to /root/.nvm
-        if [[ -d "$user_home/.nvm" && ! -d "/root/.nvm" ]]; then
-          log_debug "Copying NVM from $user_home/.nvm to /root/.nvm"
-          parse_output $(run_command "cp -r $user_home/.nvm /root/.nvm" "true")
-          parse_output $(run_command "chown -R root:root /root/.nvm" "true")
-        fi
-      fi
-      
-      # Update root's bashrc to automatically source NVM
-      local root_bashrc_path="/root/.bashrc"
-      if [[ -f "$root_bashrc_path" ]]; then
-        if ! grep -q "NVM_DIR" "$root_bashrc_path"; then
-          log_info "Adding NVM source commands to root's .bashrc..."
-          cat >> "$root_bashrc_path" << 'EOF'
-
-# NVM setup
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-EOF
-          # Source the updated bashrc and log the result
-          parse_output $(run_command "export HOME=/root && source /root/.bashrc" "true" "false")
-          log_debug "Sourcing updated .bashrc returned code $RET_CODE"
-        else
-          log_info "NVM source commands already exist in root's .bashrc"
-          log_debug "NVM source commands already exist in root's .bashrc"
-        fi
-      else
-        # Create a .bashrc file for root if it doesn't exist
-        log_info "Creating .bashrc for root with NVM configuration..."
-        cat > "$root_bashrc_path" << 'EOF'
-# ~/.bashrc: executed by bash(1) for non-login shells.
-
-# NVM setup
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-EOF
-        log_debug "Created new .bashrc for root with NVM configuration"
-      fi
-      
-      # Try to install Node.js using NVM for root with explicit HOME
-      log_debug "Attempting to install Node.js with NVM for root"
-      
-      local nvm_install_node_cmd_root="export HOME=/root && export NVM_DIR=\"/root/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\" && nvm install node && nvm use node"
-      parse_output $(run_command "$nvm_install_node_cmd_root" "true" "false")
-      
-      log_debug "Node.js install returned code $RET_CODE"
-      if [[ -n "$STDOUT" ]]; then
-        log_debug "Node.js stdout: $STDOUT"
-      fi
-      if [[ -n "$STDERR" ]]; then
-        log_debug "Node.js stderr: $STDERR"
-      fi
-      
-      log_info "NVM installation completed."
-      log_info "NVM has been configured to be automatically loaded in future shell sessions."
-    elif ! is_installed "$pkg"; then
+    if ! is_installed "$pkg"; then
       log_info "Installing $pkg..."
       log_debug "Running: apt install -y $pkg"
       parse_output $(run_command "apt install -y $pkg" "true" "false")
@@ -709,21 +431,7 @@ EOF
     else
       log_info "$pkg is already installed, skipping."
     fi
-    
-    # Check if any Docker packages were installed
-    for docker_pkg in "${docker_pkgs[@]}"; do
-      if [[ "$pkg" == "$docker_pkg" && $(is_installed "$pkg") ]]; then
-        DOCKER_INSTALLED=true
-        break
-      fi
-    done
   done
-}
-
-# No need to handle Docker fallback anymore
-handle_docker_fallback() {
-  # Docker is now handled through the package selection process
-  log_debug "Docker fallback handling skipped (using standard packages)"
 }
 
 # Setup user and permissions
@@ -770,29 +478,6 @@ setup_user() {
     log_info "$CURRENT_NON_ROOT_USER is already in sudo group, skipping."
   fi
   
-  # Add user to docker group if applicable
-  if [[ "$DOCKER_INSTALLED" == "true" ]]; then
-    parse_output $(run_command "getent group docker" "true" "false")
-    
-    if [[ -n "$STDOUT" ]]; then  # Docker group exists
-      if [[ "$groups_output" != *"docker"* ]]; then
-        log_info "Adding $CURRENT_NON_ROOT_USER to docker group..."
-        if [[ "$USERMOD_AVAILABLE" == "true" ]]; then
-          parse_output $(run_command "usermod -aG docker $CURRENT_NON_ROOT_USER" "true")
-        else
-          log_info "Using alternative method to add $CURRENT_NON_ROOT_USER to docker group..."
-          # Read the group file
-          if grep -q "^docker:" /etc/group; then
-            # Add user to docker group
-            sed -i "s/^docker:.*/&,$CURRENT_NON_ROOT_USER/" /etc/group
-          fi
-        fi
-        log_info "$CURRENT_NON_ROOT_USER added to docker group."
-      else
-        log_info "$CURRENT_NON_ROOT_USER is already in docker group, skipping."
-      fi
-    fi
-  fi
 }
 
 # Configure SSH server
@@ -1200,22 +885,9 @@ setup_ssh_keys() {
       log_info "$(green "Public key added to authorized_keys.")" "color"
     fi
   else
-    log_info "$(yellow "authorized_keys file already exists, would you like to add a new key? (y/n)")" "color"
-    read -r add_key
-    
-    if [[ "$add_key" == [Yy]* ]]; then
-      log_info "$(green "Please paste your public SSH key to add to authorized_keys (press ENTER when done):")" "color"
-      read -r ssh_key
-      
-      if [[ -n "$ssh_key" ]]; then
-        echo "$ssh_key" >> "$authorized_keys"
-        log_info "$(green "Public key added to authorized_keys.")" "color"
-      else
-        log_info "No key provided. You can add a key later with: echo 'YOUR_PUBLIC_KEY' >> ~/.ssh/authorized_keys"
-      fi
-    else
-      log_info "Skipping adding new key."
-    fi
+    # Just log that authorized_keys exists without asking
+    log_info "SSH authorized_keys file already exists."
+    log_debug "To add a new key manually: echo 'YOUR_PUBLIC_KEY' >> $authorized_keys"
   fi
   
   # Restart SSH service
@@ -1349,14 +1021,12 @@ EOF
   log_info "Running as root user: $(id -un)"
   log_info "Detected non-root user: $CURRENT_NON_ROOT_USER"
   
-  # Setup Docker repository
-  setup_docker_repository
+  # Setup repositories for package installation
+  setup_repositories
   
   # Install selected packages
   install_packages
   
-  # Handle Docker installation fallback if needed
-  handle_docker_fallback
   
   # Configure SSH server
   configure_ssh
