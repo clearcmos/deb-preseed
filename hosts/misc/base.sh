@@ -444,27 +444,17 @@ EOF
   
   # Process each configured share
   local mount_successful=false
+  local smb_credentials_file="/etc/secrets/.smb"
+  
+  # Ensure the SMB credentials file has correct permissions
+  chmod 0600 "$smb_credentials_file"
+  parse_output $(run_command "chown root:root $smb_credentials_file" "true")
+  log_debug "Using existing SMB credentials file at $smb_credentials_file"
   
   for config in "${shares_config[@]}"; do
     IFS='|' read -r host host_name share_name username password <<< "$config"
     
     log_info "$(green "Processing share '${share_name}' on ${host} (${host_name})")" "color"
-    
-    # Create a credentials file for this host
-    local creds_file="/etc/.smb_${host//\./_}"
-    log_info "Creating credentials file for $host..."
-    
-    if [[ -n "$username" ]]; then
-      echo "username=$username" > "$creds_file"
-      echo "password=$password" >> "$creds_file"
-    else
-      echo "username=guest" > "$creds_file"
-      echo "password=" >> "$creds_file"
-    fi
-    
-    chmod 0600 "$creds_file"
-    parse_output $(run_command "chown root:root $creds_file" "true")
-    log_debug "Credentials file created at $creds_file"
     
     # Create mount point
     local mount_point="/mnt/$share_name"
@@ -493,8 +483,8 @@ EOF
       fi
     fi
     
-    # Add to fstab
-    local fstab_entry="//$host/$share_name $mount_point cifs credentials=$creds_file,x-gvfs-show,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER 0 0"
+    # Add to fstab with credentials pointing to the shared SMB credentials file
+    local fstab_entry="//$host/$share_name $mount_point cifs credentials=$smb_credentials_file,iocharset=utf8,file_mode=0777,dir_mode=0777,x-gvfs-show,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER 0 0"
     
     # Check if entry already exists
     if grep -q "//$host/$share_name $mount_point" /etc/fstab; then
@@ -527,7 +517,7 @@ EOF
     
     # Try with explicit SMB versions
     for vers in "3.0" "2.0" "1.0"; do
-      local mount_cmd="mount -t cifs '//$host/$share_name' '$mount_point' -o 'credentials=$creds_file,vers=$vers,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER'"
+      local mount_cmd="mount -t cifs '//$host/$share_name' '$mount_point' -o 'credentials=$smb_credentials_file,vers=$vers,iocharset=utf8,file_mode=0777,dir_mode=0777,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER'"
       parse_output $(run_command "$mount_cmd" "true" "false")
       
       # Add detailed debugging info at debug level
@@ -561,9 +551,6 @@ EOF
   else
     log_warning "$(yellow "Failed to mount any SMB shares. They will be attempted at system startup.")" "color"
   fi
-  
-  # Ensure the credentials files and passwords aren't accessible
-  parse_output $(run_command "find /etc -name '.smb_*' -exec chmod 600 {} \\;" "true")
   
   # Clear password from memory (bash doesn't have unset for elements within a pipe-delimited string)
   # But the function will exit soon anyway, clearing local variables
