@@ -21,7 +21,7 @@ getsecrets() {
     echo "0" > "$temp_counter_file"
     
     # Download files from the secrets subdirectory to temporary directory
-    smbclient //192.168.1.4/deployment -U 'guest%' -c "cd secrets; recurse ON; prompt OFF; lcd $temp_dir; mget *"
+    smbclient //syno.home.arpa/deployment -U 'guest%' -c "cd secrets; recurse ON; prompt OFF; lcd $temp_dir; mget *"
     
     # Process and decrypt files
     while IFS= read -r file; do
