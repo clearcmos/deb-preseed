@@ -77,17 +77,56 @@
         fi
     fi
 
-    # If token not loaded from file, get it from user
+    # If token not loaded from file, decrypt it from network share
     if [ "$token_loaded_from_file" = false ]; then
         # Secure credential input
-        echo -e "\nConfiguration:"
+        echo -e "\nDecrypting 1Password token:"
+        
+        # Get password from user to decrypt token
         while true; do
-            read -rsp "Enter 1Password service account token (hidden input): " token
+            read -rsp "Enter password to decrypt token: " decrypt_password
             echo  # New line after password input
-            [[ -n "$token" ]] && break
-            echo -e "\nError: Token cannot be empty"
+            [[ -n "$decrypt_password" ]] && break
+            echo -e "\nError: Password cannot be empty"
         done
-
+        
+        # Create temp directory for mounting SMB share
+        TEMP_MOUNT=$(mktemp -d)
+        trap 'rmdir "$TEMP_MOUNT" 2>/dev/null || true' EXIT
+        
+        echo "Fetching encrypted token from syno.home.arpa..."
+        # Mount SMB share temporarily
+        mount -t cifs //syno.home.arpa/deployment "$TEMP_MOUNT" -o guest,ro 2>/dev/null
+        
+        if [ $? -eq 0 ]; then
+            if [ -f "$TEMP_MOUNT/encrypted-1p-token" ]; then
+                # Decrypt the token file with the provided password
+                token=$(openssl enc -aes-256-cbc -d -salt -in "$TEMP_MOUNT/encrypted-1p-token" -pass pass:"$decrypt_password" 2>/dev/null)
+                
+                # Check if decryption was successful
+                if [ $? -ne 0 ]; then
+                    echo "Error: Failed to decrypt token. Incorrect password."
+                    umount "$TEMP_MOUNT" 2>/dev/null
+                    rmdir "$TEMP_MOUNT" 2>/dev/null
+                    return 1
+                fi
+            else
+                echo "Error: Encrypted token file not found at syno.home.arpa/deployment"
+                umount "$TEMP_MOUNT" 2>/dev/null
+                rmdir "$TEMP_MOUNT" 2>/dev/null
+                return 1
+            fi
+            # Unmount SMB share
+            umount "$TEMP_MOUNT" 2>/dev/null
+            rmdir "$TEMP_MOUNT" 2>/dev/null
+        else
+            echo "Error: Could not connect to syno.home.arpa/deployment"
+            rmdir "$TEMP_MOUNT" 2>/dev/null
+            return 1
+        fi
+        
+        echo "Token successfully decrypted."
+        
         # Set the service account token
         export OP_SERVICE_ACCOUNT_TOKEN="$token"
 
