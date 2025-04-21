@@ -376,6 +376,17 @@ SMB_HOST_2_USER=otheruser
 SMB_HOST_2_PW=otherpassword
 SMB_HOST_2_SHARE_1=othershare
 EOF
+    # Set proper permissions to match other files in /etc/secrets
+    chmod 0640 "$smb_env_path"
+    
+    # Create secrets group if it doesn't exist
+    parse_output $(run_command "getent group secrets" "true" "false")
+    if [[ $RET_CODE -ne 0 ]]; then
+      log_info "Creating 'secrets' group..."
+      parse_output $(run_command "groupadd secrets" "true")
+    fi
+    
+    parse_output $(run_command "chown root:secrets $smb_env_path" "true")
     log_info "Template created. Please edit $smb_env_path with your share information and re-run the script."
     return
   fi
@@ -444,12 +455,6 @@ EOF
   
   # Process each configured share
   local mount_successful=false
-  local smb_credentials_file="/etc/secrets/.smb"
-  
-  # Ensure the SMB credentials file has correct permissions
-  chmod 0600 "$smb_credentials_file"
-  parse_output $(run_command "chown root:root $smb_credentials_file" "true")
-  log_debug "Using existing SMB credentials file at $smb_credentials_file"
   
   for config in "${shares_config[@]}"; do
     IFS='|' read -r host host_name share_name username password <<< "$config"
@@ -483,8 +488,17 @@ EOF
       fi
     fi
     
-    # Add to fstab with credentials pointing to the shared SMB credentials file
-    local fstab_entry="//$host/$share_name $mount_point cifs credentials=$smb_credentials_file,iocharset=utf8,file_mode=0777,dir_mode=0777,x-gvfs-show,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER 0 0"
+    # Create a per-share credentials file
+    local creds_file="/etc/.smb_${host//\./_}"
+    log_info "Creating credentials file for ${host}..."
+    echo "username=$username" > "$creds_file"
+    echo "password=$password" >> "$creds_file"
+    chmod 0640 "$creds_file"
+    parse_output $(run_command "chown root:secrets $creds_file" "true")
+    log_debug "Credentials file created at $creds_file with root:secrets ownership"
+    
+    # Add to fstab with credentials pointing to the per-share credentials file
+    local fstab_entry="//$host/$share_name $mount_point cifs credentials=$creds_file,iocharset=utf8,file_mode=0777,dir_mode=0777,x-gvfs-show,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER 0 0"
     
     # Check if entry already exists
     if grep -q "//$host/$share_name $mount_point" /etc/fstab; then
@@ -517,7 +531,7 @@ EOF
     
     # Try with explicit SMB versions
     for vers in "3.0" "2.0" "1.0"; do
-      local mount_cmd="mount -t cifs '//$host/$share_name' '$mount_point' -o 'credentials=$smb_credentials_file,vers=$vers,iocharset=utf8,file_mode=0777,dir_mode=0777,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER'"
+      local mount_cmd="mount -t cifs '//$host/$share_name' '$mount_point' -o 'credentials=$creds_file,vers=$vers,iocharset=utf8,file_mode=0777,dir_mode=0777,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER'"
       parse_output $(run_command "$mount_cmd" "true" "false")
       
       # Add detailed debugging info at debug level
@@ -551,6 +565,11 @@ EOF
   else
     log_warning "$(yellow "Failed to mount any SMB shares. They will be attempted at system startup.")" "color"
   fi
+  
+  # Ensure the credentials files and passwords have proper permissions
+  log_debug "Setting secure permissions on credential files"
+  parse_output $(run_command "find /etc -name '.smb_*' -exec chmod 0640 {} \\;" "true" "false")
+  parse_output $(run_command "find /etc -name '.smb_*' -exec chown root:secrets {} \\;" "true" "false")
   
   # Clear password from memory (bash doesn't have unset for elements within a pipe-delimited string)
   # But the function will exit soon anyway, clearing local variables
