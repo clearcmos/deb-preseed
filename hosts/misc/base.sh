@@ -334,14 +334,19 @@ display_package_menu() {
     unset "packages[$(( ${#packages[@]} - 1 ))]"
   done
   
+  # Debug info
+  log_debug "Number of packages to display: ${#packages[@]}"
+  log_debug "Number of docker packages: ${#docker_pkgs[@]}"
+  
   echo -e "\nPackage Selection Menu"
   echo "----------------------"
   echo "Available packages:"
   
-  local idx=1
-  for pkg in "${packages[@]}"; do
-    echo "$idx) $pkg"
-    ((idx++))
+  # Use a more robust iteration with indices
+  for i in "${!packages[@]}"; do
+    if [[ -n "${packages[$i]}" ]]; then
+      echo "$((i+1)). ${packages[$i]}"
+    fi
   done
   
   echo -e "\nEnter package numbers to install (comma-separated, e.g., '1,3,5')"
@@ -355,8 +360,10 @@ display_package_menu() {
   
   if [[ "$selection" == "all" ]]; then
     # Select all packages
-    for pkg in "${packages[@]}"; do
-      selected_packages["$pkg"]=1
+    for i in "${!packages[@]}"; do
+      if [[ -n "${packages[$i]}" ]]; then
+        selected_packages["${packages[$i]}"]=1
+      fi
     done
     
     # Add docker packages if docker is in the list
@@ -379,7 +386,7 @@ display_package_menu() {
       
       idx=$((index - 1))
       
-      if (( idx >= 0 && idx < ${#packages[@]} )); then
+      if (( idx >= 0 && idx < ${#packages[@]} )) && [[ -n "${packages[$idx]}" ]]; then
         selected_pkg="${packages[$idx]}"
         selected_packages["$selected_pkg"]=1
         
@@ -444,6 +451,11 @@ install_packages() {
     "pandoc"
   )
   
+  log_info "Initial package count: ${#pkgs[@]}"
+  for pkg in "${pkgs[@]}"; do
+    log_debug "Initial package: $pkg"
+  done
+  
   # Check if Docker is available and add Docker packages
   docker_pkgs=()
   parse_output $(run_command "apt-cache policy docker-ce" "true" "false")
@@ -459,17 +471,48 @@ install_packages() {
     )
     # If Docker is available, add "docker" to the package list
     pkgs+=("docker")
+    log_info "Added Docker to packages"
   fi
   
   # Add Plex as an option regardless of whether it's in repositories
   pkgs+=("plex")
+  log_info "Added Plex to packages"
   
   # Sort packages alphabetically
-  IFS=$'\n' pkgs=($(sort <<<"${pkgs[*]}"))
-  unset IFS
+  log_info "Package count before sorting: ${#pkgs[@]}"
+  
+  # Simple manual sorting instead of using sort
+  declare -a sorted_pkgs=()
+  for pkg in "${pkgs[@]}"; do
+    sorted_pkgs+=("$pkg")
+  done
+  
+  # Use insertion sort
+  for ((i=1; i<${#sorted_pkgs[@]}; i++)); do
+    key="${sorted_pkgs[$i]}"
+    j=$((i-1))
+    while (( j >= 0 )) && [[ "${sorted_pkgs[$j]}" > "$key" ]]; do
+      sorted_pkgs[$((j+1))]="${sorted_pkgs[$j]}"
+      j=$((j-1))
+    done
+    sorted_pkgs[$((j+1))]="$key"
+  done
+  
+  pkgs=("${sorted_pkgs[@]}")
+  
+  log_info "Package count after sorting: ${#pkgs[@]}"
+  for pkg in "${pkgs[@]}"; do
+    log_debug "Sorted package: $pkg"
+  done
   
   # Display interactive menu for package selection
   log_info "Displaying package selection menu..."
+  # Print the packages array directly for debugging
+  log_info "Available packages:"
+  for i in "${!pkgs[@]}"; do
+    echo "$((i+1)). ${pkgs[$i]}"
+  done
+  
   selected_packages_str=$(display_package_menu "${pkgs[@]}" "${docker_pkgs[@]}")
   
   # Convert string to array
