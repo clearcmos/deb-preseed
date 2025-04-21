@@ -789,7 +789,7 @@ AllowUsers {self.current_non_root_user} root
         # Define the path to the SMB environment file
         script_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.dirname(os.path.dirname(script_dir))
-        smb_env_path = os.path.join(root_dir, "secrets", ".smb")
+        smb_env_path = "/etc/secrets/.smb"
 
         # Check if the SMB env file exists
         if not os.path.exists(smb_env_path):

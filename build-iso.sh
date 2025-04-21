@@ -18,7 +18,7 @@ fi
 info "Using preseed file: $PRESEED_PATH"
 
 # Load .preseed
-ENV_FILE="secrets/.preseed"
+ENV_FILE="/etc/secrets/.preseed"
 if [[ ! -f "$ENV_FILE" ]]; then
   mkdir -p "$(dirname "$ENV_FILE")"
   cat > "$ENV_FILE" <<'EOF'
