@@ -337,6 +337,14 @@ X11Forwarding no
 ClientAliveInterval 300
 ClientAliveCountMax 2
 AllowUsers $CURRENT_NON_ROOT_USER root
+
+# Restrict SSH access to LAN IPs
+Match Address 192.168.1.0/24
+  PermitRootLogin yes
+  PubkeyAuthentication yes
+
+Match Address *,!192.168.1.0/24
+  DenyUsers *
 EOF
   
   log_info "SSH configuration updated."
@@ -741,12 +749,14 @@ finalize_script() {
     log_info ""
     log_info "$(blue "SSH has been configured with the following settings:")" "color"
     
-    log_info "- SSH access is restricted to user: $(cyan "$CURRENT_NON_ROOT_USER")" "color"
-    log_info "- Root login is disabled"
+    log_info "- SSH access is restricted to user: $(cyan "$CURRENT_NON_ROOT_USER and root")" "color"
+    log_info "- Access is restricted to LAN IPs (192.168.1.0/24 network)"
+    log_info "- Root login is enabled"
     log_info "- SSH key authentication is enabled"
-    log_info "- Password authentication is enabled"
+    log_info "- Password authentication is disabled"
     
-    log_info "You can now connect to this server using: $(green "ssh ${CURRENT_NON_ROOT_USER}@hostname")" "color"
+    log_info "You can now connect to this server using: $(green "ssh ${CURRENT_NON_ROOT_USER}@hostname")" "color" 
+    log_info "Or connect as root: $(green "ssh root@hostname")" "color"
     
     log_info ""
     
