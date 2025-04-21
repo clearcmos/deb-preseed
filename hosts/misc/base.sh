@@ -238,54 +238,24 @@ detect_non_root_user() {
   fi
 }
 
-# Set up Docker repository
+# Set up Docker repository - Simplified to use standard repos only
 setup_docker_repository() {
-  log_info "Setting up Docker repository..."
+  log_info "Docker setup: Using standard Debian repositories"
+  # No need for external Docker repos
   
-  # Setup keyrings directory
-  parse_output $(run_command "install -m 0755 -d /etc/apt/keyrings" "true")
-  
-  # Add Docker's GPG key
-  if [[ ! -f "/etc/apt/keyrings/docker.gpg" ]]; then
-    log_info "Adding Docker's official GPG key..."
-    log_debug "Executing Docker GPG key download with verbose output"
-    # Split the command into separate curl and gpg steps for better debugging
-    parse_output $(run_command "curl -fsSL -v https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg" "true")
-    if [[ $RET_CODE -eq 0 ]]; then
-      log_info "Docker GPG key download successful, running gpg command..."
-      parse_output $(run_command "cat /tmp/docker.gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg" "true")
-      parse_output $(run_command "chmod a+r /etc/apt/keyrings/docker.gpg" "true")
-      # Clean up temporary file
-      parse_output $(run_command "rm /tmp/docker.gpg" "true")
-    else
-      log_error "Failed to download Docker GPG key: $STDERR"
-      log_info "Skipping Docker repository setup"
-    fi
-  fi
-  
-  # Add Docker repository
-  log_info "Adding Docker repository to apt sources..."
-  
-  # Check if Docker GPG key was successfully added
-  if [[ ! -f "/etc/apt/keyrings/docker.gpg" ]]; then
-    log_error "Docker GPG key not found, skipping repository setup"
-    return 1
-  fi
-  
-  # Get distribution codename
-  parse_output $(run_command ". /etc/os-release && echo \"$VERSION_CODENAME\"" "true")
+  # Get distribution codename - use lsb_release directly as it's more reliable
+  parse_output $(run_command "lsb_release -cs" "true" "false")
   local codename="$STDOUT"
   
-  # If codename is empty or failed, try another approach
+  # If empty, try alternative method
   if [[ -z "$codename" ]]; then
-    log_warning "Failed to get distribution codename from os-release, trying lsb_release"
-    parse_output $(run_command "lsb_release -cs" "true" "false")
+    parse_output $(run_command ". /etc/os-release && echo \"$VERSION_CODENAME\"" "true")
     codename="$STDOUT"
     
     # If still empty, use a default
     if [[ -z "$codename" ]]; then
-      log_warning "Could not determine distribution codename, using 'bullseye' as default"
-      codename="bullseye"
+      # Use a more sensible default for newer systems
+      codename="bookworm"
     fi
   fi
   
@@ -324,15 +294,9 @@ setup_docker_repository() {
 display_package_menu() {
   local packages=("$@")
   
-  # Extract the Docker packages (last N elements of the array)
-  docker_count=5
-  start_idx=$(( ${#packages[@]} - $docker_count ))
-  declare -a docker_pkgs=("${packages[@]:$start_idx:$docker_count}")
-  
-  # Remove Docker packages from the main array
-  for ((i=0; i<docker_count; i++)); do
-    unset "packages[$(( ${#packages[@]} - 1 ))]"
-  done
+  # We don't need to handle Docker packages specially anymore
+  docker_count=0
+  declare -a docker_pkgs=()
   
   # Debug info
   log_debug "Number of packages to display: ${#packages[@]}"
@@ -365,37 +329,34 @@ display_package_menu() {
         selected_packages["${packages[$i]}"]=1
       fi
     done
-    
-    # Add docker packages if docker is in the list
-    for pkg in "${docker_pkgs[@]}"; do
-      selected_packages["$pkg"]=1
-    done
   elif [[ "$selection" != "none" ]]; then
+    # Debug output for troubleshooting
+    log_debug "Selection entered: '$selection'"
+    
     # Process comma-separated selections
     IFS=',' read -ra selected_indices <<< "$selection"
+    log_debug "Number of indices parsed: ${#selected_indices[@]}"
     
     for index in "${selected_indices[@]}"; do
       # Convert to zero-based index
       index=$(echo "$index" | tr -d ' ')
+      log_debug "Processing index: $index"
       
       if ! [[ "$index" =~ ^[0-9]+$ ]]; then
         echo "Invalid selection format. Please use numbers separated by commas."
-        display_package_menu "${packages[@]}" "${docker_pkgs[@]}"
+        display_package_menu "${packages[@]}"
         return
       fi
       
       idx=$((index - 1))
+      log_debug "Converted to 0-based index: $idx"
       
       if (( idx >= 0 && idx < ${#packages[@]} )) && [[ -n "${packages[$idx]}" ]]; then
         selected_pkg="${packages[$idx]}"
+        log_debug "Adding package to selection: $selected_pkg"
         selected_packages["$selected_pkg"]=1
-        
-        # If docker is selected, add all docker packages
-        if [[ "$selected_pkg" == "docker" ]]; then
-          for docker_pkg in "${docker_pkgs[@]}"; do
-            selected_packages["$docker_pkg"]=1
-          done
-        fi
+      else
+        log_debug "Invalid package index: $idx (valid range: 0-$((${#packages[@]}-1)))"
       fi
     done
   fi
@@ -456,23 +417,11 @@ install_packages() {
     log_debug "Initial package: $pkg"
   done
   
-  # Check if Docker is available and add Docker packages
+  # Add docker.io instead of docker-ce (from standard repos)
+  pkgs+=("docker.io" "docker-compose-plugin")
+  log_info "Added Docker packages from standard repos"
+  DOCKER_AVAILABLE=true
   docker_pkgs=()
-  parse_output $(run_command "apt-cache policy docker-ce" "true" "false")
-  
-  if [[ "$STDOUT" == *"Candidate:"* ]]; then
-    DOCKER_AVAILABLE=true
-    docker_pkgs=(
-      "containerd.io"
-      "docker-buildx-plugin"
-      "docker-ce"
-      "docker-ce-cli"
-      "docker-compose-plugin"
-    )
-    # If Docker is available, add "docker" to the package list
-    pkgs+=("docker")
-    log_info "Added Docker to packages"
-  fi
   
   # Add Plex as an option regardless of whether it's in repositories
   pkgs+=("plex")
@@ -513,15 +462,19 @@ install_packages() {
     echo "$((i+1)). ${pkgs[$i]}"
   done
   
-  selected_packages_str=$(display_package_menu "${pkgs[@]}" "${docker_pkgs[@]}")
+  selected_packages_str=$(display_package_menu "${pkgs[@]}")
   
-  # Convert string to array
+  # Convert string to array 
   read -ra selected_pkgs <<< "$selected_packages_str"
+  
+  # Debug output to check selected packages
+  log_debug "Selected packages as string: $selected_packages_str"
+  log_debug "Selected packages as array: ${selected_pkgs[*]}"
   
   if [[ ${#selected_pkgs[@]} -eq 0 ]]; then
     log_info "Package selection was cancelled."
   else
-    log_info "Selected ${#selected_pkgs[@]} packages for installation."
+    log_info "Selected ${#selected_pkgs[@]} packages for installation: ${selected_pkgs[*]}"
   fi
   
   # Install selected packages
@@ -745,7 +698,14 @@ EOF
       log_info "NVM has been configured to be automatically loaded in future shell sessions."
     elif ! is_installed "$pkg"; then
       log_info "Installing $pkg..."
+      log_debug "Running: apt install -y $pkg"
       parse_output $(run_command "apt install -y $pkg" "true" "false")
+      
+      if [[ $RET_CODE -eq 0 ]]; then
+        log_info "Successfully installed $pkg"
+      else
+        log_error "Failed to install $pkg: $STDERR"
+      fi
     else
       log_info "$pkg is already installed, skipping."
     fi
@@ -760,26 +720,10 @@ EOF
   done
 }
 
-# Handle Docker fallback to docker.io if needed
+# No need to handle Docker fallback anymore
 handle_docker_fallback() {
-  if [[ "$DOCKER_AVAILABLE" != "true" ]]; then
-    if [[ -f "/etc/apt/sources.list.d/docker.list" ]]; then
-      log_info "Docker repository exists but packages not available. Using docker.io as fallback..."
-    else
-      log_info "Docker repository file not found, using docker.io as fallback..."
-    fi
-    
-    read -r -p "Install docker.io and docker-compose-plugin? (Y/n): " docker_fallback_choice
-    
-    if [[ ! "$docker_fallback_choice" =~ ^[Nn] ]]; then
-      log_info "Installing alternative Docker packages..."
-      parse_output $(run_command "apt install -y docker.io docker-compose-plugin" "true")
-      DOCKER_INSTALLED=true
-    else
-      log_info "Skipping docker.io installation."
-      DOCKER_INSTALLED=false
-    fi
-  fi
+  # Docker is now handled through the package selection process
+  log_debug "Docker fallback handling skipped (using standard packages)"
 }
 
 # Setup user and permissions
