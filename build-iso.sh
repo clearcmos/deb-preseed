@@ -10,15 +10,15 @@ warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERR]${NC} $*"; exit 1; }
 
 # Check if preseed.cfg exists in the root directory
-PRESEED_PATH="preseed.cfg"
+PRESEED_PATH="common/preseed.cfg"
 if [[ ! -f "$PRESEED_PATH" ]]; then
-  error "preseed.cfg not found in the root directory"
+  error "preseed.cfg not found in the common directory"
 fi
 
 info "Using preseed file: $PRESEED_PATH"
 
-# Load .preseed-env
-ENV_FILE="secrets/.preseed-env"
+# Load .preseed
+ENV_FILE="secrets/.preseed"
 if [[ ! -f "$ENV_FILE" ]]; then
   mkdir -p "$(dirname "$ENV_FILE")"
   cat > "$ENV_FILE" <<'EOF'

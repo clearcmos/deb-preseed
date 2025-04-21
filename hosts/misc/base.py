@@ -789,14 +789,14 @@ AllowUsers {self.current_non_root_user} root
         # Define the path to the SMB environment file
         script_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.dirname(os.path.dirname(script_dir))
-        smb_env_path = os.path.join(root_dir, "secrets", ".smb-env")
+        smb_env_path = os.path.join(root_dir, "secrets", ".smb")
 
         # Check if the SMB env file exists
         if not os.path.exists(smb_env_path):
             logger.info(f"SMB environment file not found at {smb_env_path}, creating template...")
             os.makedirs(os.path.dirname(smb_env_path), exist_ok=True)
             
-            # Create a template .smb-env file using the current format
+            # Create a template .smb file using the current format
             with open(smb_env_path, "w") as f:
                 f.write("""# SMB/CIFS shares configuration
 
