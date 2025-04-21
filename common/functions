@@ -1,71 +1,189 @@
-getsecrets() {
-    # Check if running as root
-    if [ "$(id -u)" -ne 0 ]; then
-        echo "This function needs root privileges to write to /etc. Re-executing with sudo..."
-        # Re-execute the function with sudo
-        sudo bash -c "$(declare -f getsecrets); getsecrets"
-        return $?
+1p() {
+    # First, run the 1p setup
+    echo "Setting up 1Password CLI..."
+    
+    # Better check if actually installed and executable
+    if ! which op >/dev/null 2>&1; then
+        echo "Installing 1Password CLI..."
+
+        {
+            # Use proper temp files with correct permissions
+            TEMP_DIR=$(mktemp -d)
+            trap 'rm -rf "$TEMP_DIR"' EXIT
+
+            # Download and check if we need to update the keyring
+            curl -sS https://downloads.1password.com/linux/keys/1password.asc -o "$TEMP_DIR/1password.asc"
+
+            if [ -f /usr/share/keyrings/1password-archive-keyring.gpg ]; then
+                # Compare existing with new
+                gpg --dearmor -o "$TEMP_DIR/1password-archive-keyring.gpg" < "$TEMP_DIR/1password.asc" 2>/dev/null
+                if cmp -s /usr/share/keyrings/1password-archive-keyring.gpg "$TEMP_DIR/1password-archive-keyring.gpg"; then
+                    echo "Keyring is up-to-date."
+                else
+                    echo "Updating keyring..."
+                    sudo cp "$TEMP_DIR/1password-archive-keyring.gpg" /usr/share/keyrings/1password-archive-keyring.gpg
+                fi
+            else
+                # First time installation
+                gpg --dearmor < "$TEMP_DIR/1password.asc" | sudo tee /usr/share/keyrings/1password-archive-keyring.gpg >/dev/null
+            fi
+
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/$(dpkg --print-architecture) stable main" | \
+            sudo tee /etc/apt/sources.list.d/1password.list > /dev/null
+
+            sudo mkdir -p /etc/debsig/policies/AC2D62742012EA22/
+            curl -sS https://downloads.1password.com/linux/debian/debsig/1password.pol -o "$TEMP_DIR/1password.pol"
+            if [ ! -f /etc/debsig/policies/AC2D62742012EA22/1password.pol ] || ! cmp -s "$TEMP_DIR/1password.pol" /etc/debsig/policies/AC2D62742012EA22/1password.pol; then
+                sudo cp "$TEMP_DIR/1password.pol" /etc/debsig/policies/AC2D62742012EA22/1password.pol
+            fi
+
+            sudo mkdir -p /usr/share/debsig/keyrings/AC2D62742012EA22
+            curl -sS https://downloads.1password.com/linux/keys/1password.asc -o "$TEMP_DIR/1password-debsig.asc"
+            if [ -f /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg ]; then
+                gpg --dearmor -o "$TEMP_DIR/debsig.gpg" < "$TEMP_DIR/1password-debsig.asc" 2>/dev/null
+                if ! cmp -s /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg "$TEMP_DIR/debsig.gpg"; then
+                    sudo cp "$TEMP_DIR/debsig.gpg" /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg
+                fi
+            else
+                gpg --dearmor < "$TEMP_DIR/1password-debsig.asc" | sudo tee /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg >/dev/null
+            fi
+
+            sudo apt update && sudo apt install -y 1password-cli
+        } || {
+            echo "Installation failed. Check network connection or permissions."
+            return 1
+        }
     fi
-    
-    local target_dir="/etc/secrets"
-    local success_count=0
-    
-    # Prompt for password
-    echo -n "Enter decryption password: "
-    read -s password
-    echo  # Add a newline after password input
-    
-    local temp_dir
-    temp_dir=$(mktemp -d)
-    local temp_counter_file="${temp_dir}/counter"
-    echo "0" > "$temp_counter_file"
-    
-    # Download files from the secrets subdirectory to temporary directory
-    smbclient //syno.home.arpa/deployment -U 'guest%' -c "cd secrets; recurse ON; prompt OFF; lcd $temp_dir; mget *"
-    
-    # Process and decrypt files
-    while IFS= read -r file; do
-        local filename
-        filename=$(basename "$file")
-        
-        # Skip the counter file we just created
-        if [[ "$filename" == "counter" ]]; then
-            continue
-        fi
-        
-        # Process all files in the secrets folder
-        local decrypted_filename="$filename"
-        local temp_decrypted_file="${temp_dir}/${decrypted_filename}.decrypted"
-        
-        # Try to decrypt to a temporary file first using the same command as the Python script
-        if openssl enc -aes-256-cbc -d -salt -pbkdf2 -iter 100000 -in "$file" -out "$temp_decrypted_file" -pass pass:"$password" 2>/dev/null; then
-            # Only create target directory if we have at least one successful decryption
-            [ ! -d "$target_dir" ] && mkdir -p "$target_dir"  # No need for sudo since we're already root
-            mv "$temp_decrypted_file" "$target_dir/$decrypted_filename"  # No need for sudo since we're already root
-            echo "Successfully decrypted: $filename"
-            # Increment the counter in the file
-            local current_count
-            current_count=$(cat "$temp_counter_file")
-            echo $((current_count + 1)) > "$temp_counter_file"
-        else
-            echo "Failed to decrypt: $file" >&2
-            rm -f "$temp_decrypted_file"  # Clean up failed decryption attempt
-        fi
-    done < <(find "$temp_dir" -type f)
-    
-    # Read the final count
-    success_count=$(cat "$temp_counter_file")
-    
-    # Clean up temporary directory
-    rm -rf "$temp_dir"
-    
-    # Report results
-    if [ $success_count -eq 0 ]; then
-        echo "No files were successfully decrypted" >&2
+
+    # Double check installation worked
+    if ! which op >/dev/null 2>&1; then
+        echo "Error: 1Password CLI installation failed."
         return 1
+    fi
+
+    # Check if we already have a token stored
+    local token_loaded_from_file=false
+    if [ -f /etc/secrets/.1p ]; then
+        source /etc/secrets/.1p
+        if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
+            echo "Using stored 1Password service account token."
+            # Test if stored token still works
+            if op vault list >/dev/null 2>&1; then
+                echo -e "\nSuccessfully authenticated!"
+                token_loaded_from_file=true
+            else
+                echo "Stored token is invalid. Please enter a new one."
+            fi
+        fi
+    fi
+
+    # If token not loaded from file, get it from user
+    if [ "$token_loaded_from_file" = false ]; then
+        # Secure credential input
+        echo -e "\nConfiguration:"
+        while true; do
+            read -rsp "Enter 1Password service account token (hidden input): " token
+            echo  # New line after password input
+            [[ -n "$token" ]] && break
+            echo -e "\nError: Token cannot be empty"
+        done
+
+        # Set the service account token
+        export OP_SERVICE_ACCOUNT_TOKEN="$token"
+
+        # Test authentication by listing vaults
+        if ! op vault list >/dev/null 2>&1; then
+            echo -e "\nAuthentication failed. Verify token validity."
+            unset OP_SERVICE_ACCOUNT_TOKEN
+            return 1
+        fi
+
+        echo -e "\nSuccessfully authenticated!"
+    fi
+
+    # Now proceed with the secrets management part
+    echo -e "\nConfiguring secrets management..."
+
+    # Check if running as root
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "Error: This function should be run as a regular user, not root."
+        return 1
+    fi
+
+    # Get the current username
+    local current_user=$(whoami)
+
+    # Create the secrets group if it doesn't exist
+    if ! getent group secrets > /dev/null; then
+        echo "Creating secrets group..."
+        sudo groupadd secrets
     else
-        echo "$success_count file(s) successfully decrypted to $target_dir"
-        return 0
+        echo "Secrets group already exists."
+    fi
+
+    # Check if user is already in the secrets group
+    if id -nG "$current_user" | grep -qw "secrets"; then
+        echo "$current_user is already a member of the secrets group."
+    else
+        echo "Adding $current_user to secrets group..."
+        sudo usermod -a -G secrets "$current_user"
+    fi
+
+    # Ensure /etc/secrets exists with secure permissions
+    sudo mkdir -p /etc/secrets
+    sudo chown root:secrets /etc/secrets
+    sudo chmod 750 /etc/secrets  # Allow directory traversal for secrets group
+
+    # Save token if not already saved
+    if [ "$token_loaded_from_file" = false ]; then
+        echo -e "\nSaving token to /etc/secrets/.1p..."
+        echo "export OP_SERVICE_ACCOUNT_TOKEN='$token'" | sudo tee /etc/secrets/.1p >/dev/null
+        sudo chown root:secrets /etc/secrets/.1p
+        sudo chmod 640 /etc/secrets/.1p
+    fi
+
+    # Fix ownership and permissions for any existing files (including hidden files)
+    if [ -d /etc/secrets ] && [ "$(sudo find /etc/secrets -mindepth 1 | wc -l)" -gt 0 ]; then
+        echo "Fixing ownership and permissions for existing files..."
+        sudo find /etc/secrets -mindepth 1 -maxdepth 1 -exec chown root:secrets {} \;
+        sudo find /etc/secrets -mindepth 1 -maxdepth 1 -exec chmod 640 {} \;
+    fi
+
+    # Get Debian vault items with explicit --vault flag
+    echo -e "\nExporting vault items..."
+    items=$(op item list --vault "Debian" --format json | jq -r '.[].id')
+
+    # Export each item to /etc/secrets
+    for id in $items; do
+        # Get item details with explicit --vault flag
+        item_json=$(op item get "$id" --vault "Debian" --format json)
+        
+        # Extract title and content
+        title=$(jq -r '.title' <<< "$item_json")
+        content=$(jq -r '.fields[]?.value // .notes' <<< "$item_json")
+        
+        # Write to temporary file first for atomic replacement
+        temp_file=$(mktemp)
+        echo "$content" > "$temp_file"
+        
+        # Move with proper ownership and permissions
+        sudo mv "$temp_file" "/etc/secrets/${title}"
+        sudo chown root:secrets "/etc/secrets/${title}"
+        sudo chmod 640 "/etc/secrets/${title}"
+    done
+
+    echo "Vault items exported successfully."
+    
+    # Only remind about login if user was just added to the group
+    if ! id -nG "$current_user" | grep -qw "secrets"; then
+        echo "Note: You may need to log out and back in for group membership to take effect."
+        echo "Or run: newgrp secrets"
+    fi
+
+    # Ask about keeping token in current shell only if we loaded it fresh
+    if [ "$token_loaded_from_file" = false ]; then
+        read -rp "Keep OP_SERVICE_ACCOUNT_TOKEN in current shell? [y/N] " keep
+        [[ "$keep" != [yY]* ]] && unset OP_SERVICE_ACCOUNT_TOKEN
     fi
 }
 

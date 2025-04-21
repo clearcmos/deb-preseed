@@ -33,8 +33,8 @@ if [ -d /etc/profile.d ]; then
   unset i
 fi
 
-for file in /etc/secrets/*; do
-    if [ -f "$file" ]; then
+for file in /etc/secrets/* /etc/secrets/.*; do
+    if [ -f "$file" ] && [ "$file" != "/etc/secrets/." ] && [ "$file" != "/etc/secrets/.." ]; then
         source "$file"
     fi
 done
