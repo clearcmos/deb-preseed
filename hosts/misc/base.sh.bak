@@ -190,7 +190,7 @@ parse_output() {
 # Check if a package is installed
 is_installed() {
   local package="$1"
-  parse_output $(run_command "dpkg -l $package" "true" "false")
+  parse_output "$(run_command "dpkg -l $package" "true" "false")"
   
   # Check if package exists in dpkg database AND has "ii" status (properly installed)
   if [[ $RET_CODE -eq 0 && $(echo "$STDOUT" | grep -E "^ii") ]]; then
@@ -250,13 +250,13 @@ setup_docker_repository() {
     log_info "Adding Docker's official GPG key..."
     log_debug "Executing Docker GPG key download with verbose output"
     # Split the command into separate curl and gpg steps for better debugging
-    parse_output $(run_command "curl -fsSL -v https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg" "true")
+    parse_output "$(run_command "curl -fsSL -v https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg" "true")"
     if [[ $RET_CODE -eq 0 ]]; then
       log_info "Docker GPG key download successful, running gpg command..."
-      parse_output $(run_command "cat /tmp/docker.gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg" "true")
-      parse_output $(run_command "chmod a+r /etc/apt/keyrings/docker.gpg" "true")
+      parse_output "$(run_command "cat /tmp/docker.gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg" "true")"
+      parse_output "$(run_command "chmod a+r /etc/apt/keyrings/docker.gpg" "true")"
       # Clean up temporary file
-      parse_output $(run_command "rm /tmp/docker.gpg" "true")
+      parse_output "$(run_command "rm /tmp/docker.gpg" "true")"
     else
       log_error "Failed to download Docker GPG key: $STDERR"
       log_info "Skipping Docker repository setup"
@@ -273,13 +273,13 @@ setup_docker_repository() {
   fi
   
   # Get distribution codename
-  parse_output $(run_command ". /etc/os-release && echo \"$VERSION_CODENAME\"" "true")
+  parse_output "$(run_command ". /etc/os-release && echo \"$VERSION_CODENAME\"" "true")"
   local codename="$STDOUT"
   
   # If codename is empty or failed, try another approach
   if [[ -z "$codename" ]]; then
     log_warning "Failed to get distribution codename from os-release, trying lsb_release"
-    parse_output $(run_command "lsb_release -cs" "true" "false")
+    parse_output "$(run_command "lsb_release -cs" "true" "false")"
     codename="$STDOUT"
     
     # If still empty, use a default
@@ -292,7 +292,7 @@ setup_docker_repository() {
   log_info "Using distribution codename: $codename"
   
   # Get architecture
-  parse_output $(run_command "dpkg --print-architecture" "true")
+  parse_output "$(run_command "dpkg --print-architecture" "true")"
   local arch="$STDOUT"
   
   if [[ -z "$arch" ]]; then
@@ -306,11 +306,11 @@ setup_docker_repository() {
   
   # Write to temporary file first to avoid permission issues
   echo "$docker_repo" > "/tmp/docker.list"
-  parse_output $(run_command "mv /tmp/docker.list /etc/apt/sources.list.d/docker.list" "true")
+  parse_output "$(run_command "mv /tmp/docker.list /etc/apt/sources.list.d/docker.list" "true")"
   
   # Update apt with error handling
   log_info "Updating apt package lists..."
-  parse_output $(run_command "apt update" "true" "false")
+  parse_output "$(run_command "apt update" "true" "false")"
   
   if [[ $RET_CODE -ne 0 ]]; then
     log_error "apt update failed: $STDERR"
@@ -422,8 +422,8 @@ install_packages() {
   for pkg in "${critical_pkgs[@]}"; do
     if ! is_installed "$pkg"; then
       log_info "Installing critical package $pkg..."
-      parse_output $(run_command "apt update" "true")
-      parse_output $(run_command "apt install -y $pkg" "true")
+      parse_output "$(run_command "apt update" "true")"
+      parse_output "$(run_command "apt install -y $pkg" "true")"
     else
       log_info "Critical package $pkg is already installed."
     fi
@@ -446,7 +446,7 @@ install_packages() {
   
   # Check if Docker is available and add Docker packages
   docker_pkgs=()
-  parse_output $(run_command "apt-cache policy docker-ce" "true" "false")
+  parse_output "$(run_command "apt-cache policy docker-ce" "true" "false")"
   
   if [[ "$STDOUT" == *"Candidate:"* ]]; then
     DOCKER_AVAILABLE=true
@@ -490,16 +490,16 @@ install_packages() {
         
         # Add Plex repository (with minimal output)
         log_info "Adding Plex repository..."
-        parse_output $(run_command "curl -fsSL https://downloads.plex.tv/plex-keys/PlexSign.key | gpg --dearmor | tee /usr/share/keyrings/plex.gpg > /dev/null" "true" "false")
-        parse_output $(run_command "echo \"deb [signed-by=/usr/share/keyrings/plex.gpg] https://downloads.plex.tv/repo/deb public main\" | tee /etc/apt/sources.list.d/plexmediaserver.list > /dev/null" "true" "false")
+        parse_output "$(run_command "curl -fsSL https://downloads.plex.tv/plex-keys/PlexSign.key | gpg --dearmor | tee /usr/share/keyrings/plex.gpg > /dev/null" "true" "false")"
+        parse_output "$(run_command "echo \"deb [signed-by=/usr/share/keyrings/plex.gpg] https://downloads.plex.tv/repo/deb public main\" | tee /etc/apt/sources.list.d/plexmediaserver.list > /dev/null" "true" "false")"
         
         # Update package list and install Plex
-        parse_output $(run_command "apt update > /dev/null" "true" "false")
-        parse_output $(run_command "apt install -y plexmediaserver" "true" "false")
+        parse_output "$(run_command "apt update > /dev/null" "true" "false")"
+        parse_output "$(run_command "apt install -y plexmediaserver" "true" "false")"
         
         # Enable and start Plex Media Server
-        parse_output $(run_command "systemctl enable plexmediaserver" "true" "false")
-        parse_output $(run_command "systemctl start plexmediaserver" "true" "false")
+        parse_output "$(run_command "systemctl enable plexmediaserver" "true" "false")"
+        parse_output "$(run_command "systemctl start plexmediaserver" "true" "false")"
       else
         log_info "Plex Media Server is already installed, skipping."
       fi
@@ -509,43 +509,43 @@ install_packages() {
       # First install build-essential package
       if ! is_installed "build-essential"; then
         log_info "Installing build-essential package for Bitwarden CLI..."
-        parse_output $(run_command "apt install -y build-essential" "true" "false")
+        parse_output "$(run_command "apt install -y build-essential" "true" "false")"
       fi
       
       # Make sure npm is installed
       if ! is_installed "npm"; then
         log_info "Installing npm for Bitwarden CLI..."
-        parse_output $(run_command "apt install -y npm" "true" "false")
+        parse_output "$(run_command "apt install -y npm" "true" "false")"
       fi
       
       # Install Bitwarden CLI using npm
       log_info "Installing Bitwarden CLI using npm..."
-      parse_output $(run_command "npm install -g @bitwarden/cli" "true" "false")
+      parse_output "$(run_command "npm install -g @bitwarden/cli" "true" "false")"
       log_info "Bitwarden CLI installation completed."
     elif [[ "$pkg" == "1password-cli" ]]; then
       # Handle 1Password CLI installation
       log_info "Installing 1Password CLI..."
       
       # Update system packages
-      parse_output $(run_command "apt update" "true" "false")
+      parse_output "$(run_command "apt update" "true" "false")"
       
       # Install required dependencies
-      parse_output $(run_command "apt install -y gnupg2 apt-transport-https ca-certificates software-properties-common" "true" "false")
+      parse_output "$(run_command "apt install -y gnupg2 apt-transport-https ca-certificates software-properties-common" "true" "false")"
       
       # Add the GPG key for the 1Password APT repository (with minimal output)
-      parse_output $(run_command "curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg" "true" "false")
+      parse_output "$(run_command "curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg" "true" "false")"
       
       # Add the 1Password APT repository (with minimal output)
-      parse_output $(run_command "echo \"deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/amd64 stable main\" | tee /etc/apt/sources.list.d/1password.list > /dev/null" "true" "false")
+      parse_output "$(run_command "echo \"deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/amd64 stable main\" | tee /etc/apt/sources.list.d/1password.list > /dev/null" "true" "false")"
       
       # Add the debsig-verify policy for verifying package signatures (with minimal output)
-      parse_output $(run_command "mkdir -p /etc/debsig/policies/AC2D62742012EA22/" "true" "false")
-      parse_output $(run_command "curl -fsSL https://downloads.1password.com/linux/debian/debsig/1password.pol | tee /etc/debsig/policies/AC2D62742012EA22/1password.pol > /dev/null" "true" "false")
-      parse_output $(run_command "mkdir -p /usr/share/debsig/keyrings/AC2D62742012EA22/" "true" "false")
-      parse_output $(run_command "curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | gpg --dearmor --output /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg" "true" "false")
+      parse_output "$(run_command "mkdir -p /etc/debsig/policies/AC2D62742012EA22/" "true" "false")"
+      parse_output "$(run_command "curl -fsSL https://downloads.1password.com/linux/debian/debsig/1password.pol | tee /etc/debsig/policies/AC2D62742012EA22/1password.pol > /dev/null" "true" "false")"
+      parse_output "$(run_command "mkdir -p /usr/share/debsig/keyrings/AC2D62742012EA22/" "true" "false")"
+      parse_output "$(run_command "curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | gpg --dearmor --output /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg" "true" "false")"
       
       # Update package list and install 1Password CLI
-      parse_output $(run_command "apt update > /dev/null && apt install -y 1password-cli" "true" "false")
+      parse_output "$(run_command "apt update > /dev/null && apt install -y 1password-cli" "true" "false")"
       log_info "1Password CLI installation completed."
     elif [[ "$pkg" == "nvm" ]]; then
       # Handle NVM installation
@@ -554,7 +554,7 @@ install_packages() {
       # Install NVM for the current non-root user
       if [[ "$CURRENT_NON_ROOT_USER" != "root" ]]; then
         # Get user's home directory
-        parse_output $(run_command "getent passwd $CURRENT_NON_ROOT_USER | cut -d: -f6" "true")
+        parse_output "$(run_command "getent passwd $CURRENT_NON_ROOT_USER | cut -d: -f6" "true")"
         local user_home
         user_home=$(echo "$STDOUT" | tr -d '[:space:]')
         
@@ -562,11 +562,11 @@ install_packages() {
         
         # Ensure we explicitly set HOME environment variable for the non-root user
         local nvm_install_cmd_user="sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash'"
-        parse_output $(run_command "$nvm_install_cmd_user" "true" "false")
+        parse_output "$(run_command "$nvm_install_cmd_user" "true" "false")"
         
         # Source NVM for the current non-root user with explicit HOME
         local nvm_source_cmd_user="sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && export NVM_DIR=\"$user_home/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"'"
-        parse_output $(run_command "$nvm_source_cmd_user" "true" "false")
+        parse_output "$(run_command "$nvm_source_cmd_user" "true" "false")"
         
         # Update user's bashrc to automatically source NVM
         local bashrc_path="$user_home/.bashrc"
@@ -581,7 +581,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 EOF
             # Source the updated bashrc
-            parse_output $(run_command "sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && source $bashrc_path'" "true" "false")
+            parse_output "$(run_command "sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && source $bashrc_path'" "true" "false")"
           else
             log_info "NVM source commands already exist in $CURRENT_NON_ROOT_USER's .bashrc"
           fi
@@ -591,34 +591,34 @@ EOF
         
         # Get latest Node.js version and install for the current non-root user with explicit HOME
         local nvm_install_node_cmd_user="sudo -H -u $CURRENT_NON_ROOT_USER bash -c 'export HOME=\"$user_home\" && export NVM_DIR=\"$user_home/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\" && nvm install node && nvm use node'"
-        parse_output $(run_command "$nvm_install_node_cmd_user" "true" "false")
+        parse_output "$(run_command "$nvm_install_node_cmd_user" "true" "false")"
         
         # Export NVM environment for the current script session
         export NVM_DIR="$user_home/.nvm"
-        parse_output $(run_command "bash -c 'export HOME=\"$user_home\" && export NVM_DIR=\"$NVM_DIR\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"'" "true")
+        parse_output "$(run_command "bash -c 'export HOME=\"$user_home\" && export NVM_DIR=\"$NVM_DIR\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"'" "true")"
       fi
       
       # Also install NVM for root (regardless of whether the current user is root or not)
       log_info "Installing NVM for root user..."
       
       # Ensure root's home directory exists and is accessible
-      parse_output $(run_command "mkdir -p /root" "true")
+      parse_output "$(run_command "mkdir -p /root" "true")"
       
       # Log instead of writing to a hardcoded path
       log_debug "Starting NVM installation for root user"
       
       # List the root directory for debugging
-      parse_output $(run_command "ls -la /root" "true" "false")
+      parse_output "$(run_command "ls -la /root" "true" "false")"
       
       # Clear any existing NVM directory to ensure clean installation
-      parse_output $(run_command "rm -rf /root/.nvm" "true")
+      parse_output "$(run_command "rm -rf /root/.nvm" "true")"
       
       # Explicitly set HOME to /root when installing NVM for root user
       log_debug "Running NVM install command for root with explicit HOME"
       
       # Run the NVM installer with HOME explicitly set to /root
       local nvm_install_cmd_root="export HOME=/root && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash"
-      parse_output $(run_command "$nvm_install_cmd_root" "true" "false")
+      parse_output "$(run_command "$nvm_install_cmd_root" "true" "false")"
       
       # Log the result of the NVM installation
       log_debug "NVM install command for root returned code $RET_CODE"
@@ -630,14 +630,14 @@ EOF
       fi
       
       # Check if NVM directory was created in the correct location
-      parse_output $(run_command "ls -la /root/.nvm" "true" "false")
+      parse_output "$(run_command "ls -la /root/.nvm" "true" "false")"
       if [[ -n "$STDOUT" ]]; then
         log_debug "NVM directory exists in /root/.nvm: $STDOUT"
       else
         log_debug "NVM directory NOT found in /root/.nvm"
         
         # If NVM directory wasn't created in /root/.nvm, check if it was created elsewhere
-        parse_output $(run_command "find / -name '.nvm' -type d 2>/dev/null" "true" "false")
+        parse_output "$(run_command "find / -name '.nvm' -type d 2>/dev/null" "true" "false")"
         log_debug "Found .nvm directories: $STDOUT"
         
         # Get current user's home directory instead of hardcoded path
@@ -646,8 +646,8 @@ EOF
         # If NVM was installed in current user's home instead, copy it to /root/.nvm
         if [[ -d "$user_home/.nvm" && ! -d "/root/.nvm" ]]; then
           log_debug "Copying NVM from $user_home/.nvm to /root/.nvm"
-          parse_output $(run_command "cp -r $user_home/.nvm /root/.nvm" "true")
-          parse_output $(run_command "chown -R root:root /root/.nvm" "true")
+          parse_output "$(run_command "cp -r $user_home/.nvm /root/.nvm" "true")"
+          parse_output "$(run_command "chown -R root:root /root/.nvm" "true")"
         fi
       fi
       
@@ -664,7 +664,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 EOF
           # Source the updated bashrc and log the result
-          parse_output $(run_command "export HOME=/root && source /root/.bashrc" "true" "false")
+          parse_output "$(run_command "export HOME=/root && source /root/.bashrc" "true" "false")"
           log_debug "Sourcing updated .bashrc returned code $RET_CODE"
         else
           log_info "NVM source commands already exist in root's .bashrc"
@@ -688,7 +688,7 @@ EOF
       log_debug "Attempting to install Node.js with NVM for root"
       
       local nvm_install_node_cmd_root="export HOME=/root && export NVM_DIR=\"/root/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\" && nvm install node && nvm use node"
-      parse_output $(run_command "$nvm_install_node_cmd_root" "true" "false")
+      parse_output "$(run_command "$nvm_install_node_cmd_root" "true" "false")"
       
       log_debug "Node.js install returned code $RET_CODE"
       if [[ -n "$STDOUT" ]]; then
@@ -702,7 +702,7 @@ EOF
       log_info "NVM has been configured to be automatically loaded in future shell sessions."
     elif ! is_installed "$pkg"; then
       log_info "Installing $pkg..."
-      parse_output $(run_command "apt install -y $pkg" "true" "false")
+      parse_output "$(run_command "apt install -y $pkg" "true" "false")"
     else
       log_info "$pkg is already installed, skipping."
     fi
@@ -730,7 +730,7 @@ handle_docker_fallback() {
     
     if [[ ! "$docker_fallback_choice" =~ ^[Nn] ]]; then
       log_info "Installing alternative Docker packages..."
-      parse_output $(run_command "apt install -y docker.io docker-compose-plugin" "true")
+      parse_output "$(run_command "apt install -y docker.io docker-compose-plugin" "true")"
       DOCKER_INSTALLED=true
     else
       log_info "Skipping docker.io installation."
@@ -742,11 +742,11 @@ handle_docker_fallback() {
 # Setup user and permissions
 setup_user() {
   # Create user if doesn't exist
-  parse_output $(run_command "id $CURRENT_NON_ROOT_USER" "true" "false")
+  parse_output "$(run_command "id $CURRENT_NON_ROOT_USER" "true" "false")"
   
   if [[ "$STDERR" == *"no such user"* ]]; then
     log_info "Creating user $CURRENT_NON_ROOT_USER..."
-    parse_output $(run_command "useradd -m -s /bin/bash $CURRENT_NON_ROOT_USER" "true")
+    parse_output "$(run_command "useradd -m -s /bin/bash $CURRENT_NON_ROOT_USER" "true")"
   else
     log_info "User $CURRENT_NON_ROOT_USER already exists, skipping."
   fi
@@ -763,13 +763,13 @@ setup_user() {
   fi
   
   # Add user to sudo group
-  parse_output $(run_command "groups $CURRENT_NON_ROOT_USER" "true" "false")
+  parse_output "$(run_command "groups $CURRENT_NON_ROOT_USER" "true" "false")"
   local groups_output="$STDOUT"
   
   if [[ "$groups_output" != *"sudo"* ]]; then
     log_info "Adding $CURRENT_NON_ROOT_USER to sudo group..."
     if [[ "$USERMOD_AVAILABLE" == "true" ]]; then
-      parse_output $(run_command "usermod -aG sudo $CURRENT_NON_ROOT_USER" "true")
+      parse_output "$(run_command "usermod -aG sudo $CURRENT_NON_ROOT_USER" "true")"
     else
       log_info "Using alternative method to add $CURRENT_NON_ROOT_USER to sudo group..."
       # Read the group file
@@ -785,13 +785,13 @@ setup_user() {
   
   # Add user to docker group if applicable
   if [[ "$DOCKER_INSTALLED" == "true" ]]; then
-    parse_output $(run_command "getent group docker" "true" "false")
+    parse_output "$(run_command "getent group docker" "true" "false")"
     
     if [[ -n "$STDOUT" ]]; then  # Docker group exists
       if [[ "$groups_output" != *"docker"* ]]; then
         log_info "Adding $CURRENT_NON_ROOT_USER to docker group..."
         if [[ "$USERMOD_AVAILABLE" == "true" ]]; then
-          parse_output $(run_command "usermod -aG docker $CURRENT_NON_ROOT_USER" "true")
+          parse_output "$(run_command "usermod -aG docker $CURRENT_NON_ROOT_USER" "true")"
         else
           log_info "Using alternative method to add $CURRENT_NON_ROOT_USER to docker group..."
           # Read the group file
@@ -967,7 +967,7 @@ EOF
     fi
     
     chmod 0600 "$creds_file"
-    parse_output $(run_command "chown root:root $creds_file" "true")
+    parse_output "$(run_command "chown root:root $creds_file" "true")"
     log_debug "Credentials file created at $creds_file"
     
     # Create mount point
@@ -975,23 +975,23 @@ EOF
     if [[ ! -d "$mount_point" ]]; then
       log_info "Creating mount point directory $mount_point..."
       mkdir -p "$mount_point"
-      parse_output $(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $mount_point" "true")
-      parse_output $(run_command "chmod 755 $mount_point" "true")
+      parse_output "$(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $mount_point" "true")"
+      parse_output "$(run_command "chmod 755 $mount_point" "true")"
     else
       # Check current owner and permissions
-      parse_output $(run_command "stat -c '%U:%G' $mount_point" "true")
+      parse_output "$(run_command "stat -c '%U:%G' $mount_point" "true")"
       local current_owner="$STDOUT"
-      parse_output $(run_command "stat -c '%a' $mount_point" "true")
+      parse_output "$(run_command "stat -c '%a' $mount_point" "true")"
       local current_perms="$STDOUT"
       
       if [[ "$current_owner" != "$CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER" ]]; then
         log_info "Updating mount point ownership..."
-        parse_output $(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $mount_point" "true")
+        parse_output "$(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $mount_point" "true")"
       fi
       
       if [[ "$current_perms" != "755" ]]; then
         log_info "Updating mount point permissions..."
-        parse_output $(run_command "chmod 755 $mount_point" "true")
+        parse_output "$(run_command "chmod 755 $mount_point" "true")"
       else
         log_info "Mount point already exists with correct ownership and permissions."
       fi
@@ -1017,7 +1017,7 @@ EOF
     fi
     
     # Check if already mounted
-    parse_output $(run_command "mount | grep $mount_point" "true" "false")
+    parse_output "$(run_command "mount | grep $mount_point" "true" "false")"
     if [[ "$STDOUT" == *"$mount_point"* ]]; then
       log_info "$(green "Filesystem is already mounted.")" "color"
       share_mount_success=true
@@ -1032,7 +1032,7 @@ EOF
     # Try with explicit SMB versions
     for vers in "3.0" "2.0" "1.0"; do
       local mount_cmd="mount -t cifs '//$host/$share_name' '$mount_point' -o 'credentials=$creds_file,vers=$vers,uid=$CURRENT_NON_ROOT_USER,gid=$CURRENT_NON_ROOT_USER'"
-      parse_output $(run_command "$mount_cmd" "true" "false")
+      parse_output "$(run_command "$mount_cmd" "true" "false")"
       
       # Add detailed debugging info at debug level
       log_debug "Mount attempt with SMB v$vers: Return code $RET_CODE"
@@ -1067,7 +1067,7 @@ EOF
   fi
   
   # Ensure the credentials files and passwords aren't accessible
-  parse_output $(run_command "find /etc -name '.smb_*' -exec chmod 600 {} \\;" "true")
+  parse_output "$(run_command "find /etc -name '.smb_*' -exec chmod 600 {} \\;" "true")"
   
   # Clear password from memory (bash doesn't have unset for elements within a pipe-delimited string)
   # But the function will exit soon anyway, clearing local variables
@@ -1080,8 +1080,8 @@ setup_security_updates() {
   # Install unattended-upgrades if not already installed
   if ! is_installed "unattended-upgrades"; then
     log_info "Installing unattended-upgrades package..."
-    parse_output $(run_command "apt update" "true")
-    parse_output $(run_command "apt install -y unattended-upgrades apt-listchanges" "true")
+    parse_output "$(run_command "apt update" "true")"
+    parse_output "$(run_command "apt install -y unattended-upgrades apt-listchanges" "true")"
   fi
   
   # Configure unattended-upgrades
@@ -1144,8 +1144,8 @@ EOF
   
   # Enable and restart service
   log_info "Enabling unattended-upgrades service..."
-  parse_output $(run_command "systemctl enable unattended-upgrades" "true")
-  parse_output $(run_command "systemctl restart unattended-upgrades" "true")
+  parse_output "$(run_command "systemctl enable unattended-upgrades" "true")"
+  parse_output "$(run_command "systemctl restart unattended-upgrades" "true")"
   log_info "Automatic updates configuration completed."
 }
 
@@ -1158,7 +1158,7 @@ setup_ssh_keys() {
   
   # Get user's home directory
   log_debug "Getting home directory for user $CURRENT_NON_ROOT_USER"
-  parse_output $(run_command "getent passwd $CURRENT_NON_ROOT_USER | cut -d: -f6" "true")
+  parse_output "$(run_command "getent passwd $CURRENT_NON_ROOT_USER | cut -d: -f6" "true")"
   
   local user_home
   if [[ $RET_CODE -ne 0 ]]; then
@@ -1184,14 +1184,14 @@ setup_ssh_keys() {
   if [[ ! -d "$ssh_dir" ]]; then
     log_info "Creating SSH directory for $CURRENT_NON_ROOT_USER..."
     mkdir -p "$ssh_dir"
-    parse_output $(run_command "chmod 700 $ssh_dir" "true")
-    parse_output $(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $ssh_dir" "true")
+    parse_output "$(run_command "chmod 700 $ssh_dir" "true")"
+    parse_output "$(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $ssh_dir" "true")"
   fi
   
   # Generate SSH key if it doesn't exist
   if [[ ! -f "$ssh_dir/id_rsa" && ! -f "$ssh_dir/id_rsa.pub" ]]; then
     log_info "Generating SSH key for $CURRENT_NON_ROOT_USER..."
-    parse_output $(run_command "sudo -u $CURRENT_NON_ROOT_USER ssh-keygen -t rsa -N \"\" -f $ssh_dir/id_rsa" "true")
+    parse_output "$(run_command "sudo -u $CURRENT_NON_ROOT_USER ssh-keygen -t rsa -N \"\" -f $ssh_dir/id_rsa" "true")"
     log_info "SSH key generated successfully."
   else
     log_info "SSH key already exists for $CURRENT_NON_ROOT_USER, skipping generation."
@@ -1202,8 +1202,8 @@ setup_ssh_keys() {
   if [[ ! -f "$authorized_keys" ]]; then
     log_info "Creating authorized_keys file..."
     touch "$authorized_keys"
-    parse_output $(run_command "chmod 600 $authorized_keys" "true")
-    parse_output $(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $authorized_keys" "true")
+    parse_output "$(run_command "chmod 600 $authorized_keys" "true")"
+    parse_output "$(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $authorized_keys" "true")"
     
     log_info "$(green "Please paste your public SSH key to add to authorized_keys (press ENTER when done):")" "color"
     read -r ssh_key
@@ -1233,8 +1233,8 @@ setup_ssh_keys() {
   
   # Restart SSH service
   log_info "Restarting SSH service..."
-  parse_output $(run_command "systemctl restart sshd" "true")
-  parse_output $(run_command "systemctl status sshd --no-pager" "true")
+  parse_output "$(run_command "systemctl restart sshd" "true")"
+  parse_output "$(run_command "systemctl status sshd --no-pager" "true")"
 }
 
 # Final steps and summary
@@ -1283,24 +1283,24 @@ EOF
     if [[ $EUID -ne 0 ]]; then
       log_info "$(yellow "Creating systemd service requires root privileges. Attempting with sudo...")" "color"
       # Use sudo to move it to the right location
-      parse_output $(run_command "sudo mv /tmp/automount-on-start.service /etc/systemd/system/" "true")
-      parse_output $(run_command "sudo chmod 644 /etc/systemd/system/automount-on-start.service" "true")
+      parse_output "$(run_command "sudo mv /tmp/automount-on-start.service /etc/systemd/system/" "true")"
+      parse_output "$(run_command "sudo chmod 644 /etc/systemd/system/automount-on-start.service" "true")"
       # Enable and start the service with sudo
-      parse_output $(run_command "sudo systemctl enable automount-on-start.service" "true")
-      parse_output $(run_command "sudo systemctl start automount-on-start.service" "true")
+      parse_output "$(run_command "sudo systemctl enable automount-on-start.service" "true")"
+      parse_output "$(run_command "sudo systemctl start automount-on-start.service" "true")"
     else
       # Running as root, we can create the file directly
       mv /tmp/automount-on-start.service /etc/systemd/system/
       chmod 0644 /etc/systemd/system/automount-on-start.service
       # Enable and start the service
-      parse_output $(run_command "systemctl enable automount-on-start.service" "true")
-      parse_output $(run_command "systemctl start automount-on-start.service" "true")
+      parse_output "$(run_command "systemctl enable automount-on-start.service" "true")"
+      parse_output "$(run_command "systemctl start automount-on-start.service" "true")"
     fi
     
     log_info "$(green "Automount service created, enabled, and started")" "color"
     
     # Reload systemd
-    parse_output $(run_command "systemctl daemon-reload" "true")
+    parse_output "$(run_command "systemctl daemon-reload" "true")"
     
     exit 0
   fi
@@ -1317,7 +1317,7 @@ main() {
     log_info "$(yellow "Not running as root. Will be asking for root credentials once to setup...")" "color"
     
     # Check if sudo is available
-    parse_output $(run_command "which sudo" "true" "false")
+    parse_output "$(run_command "which sudo" "true" "false")"
     
     if [[ $RET_CODE -eq 0 ]]; then  # Sudo is available
       log_info "$(blue "sudo is available, using it to restart with elevated privileges...")" "color"
