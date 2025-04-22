@@ -1,10 +1,11 @@
 version: '3.8'
-# name: proxy-stack  # Comment this out or remove it
 services:
   traefik:
     extends:
       file: ./traefik/docker-compose.yml
       service: traefik
+    env_file:
+      - /etc/secrets/.docker
   glances:
     extends:
       file: ./glances/docker-compose.yml
