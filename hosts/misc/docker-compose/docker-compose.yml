@@ -1,0 +1,19 @@
+version: '3.8'
+
+name: proxy-stack
+
+services:
+  traefik:
+    extends:
+      file: ./traefik/docker-compose.yml
+      service: traefik
+
+  glances:
+    extends:
+      file: ./glances/docker-compose.yml
+      service: glances
+
+networks:
+  default:
+    name: proxy
+    external: false
