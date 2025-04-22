@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source /etc/profile
+
 # Setup logging
 LOG_FILE="base.log"
 LOG_LEVEL="INFO" # Set to DEBUG for more detailed logging

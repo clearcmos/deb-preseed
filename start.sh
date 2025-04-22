@@ -9,9 +9,7 @@ if [ ! -d "hosts/$HOSTNAME" ]; then
     exit 1
 fi
 
-# Source the system files for functions and aliases
-source /etc/functions
-source /etc/aliases
+source /etc/profile
 
 # Run the commands
 1p && ./hosts/$HOSTNAME/base.sh && cd hosts/$HOSTNAME/docker-compose && up && cd ~
