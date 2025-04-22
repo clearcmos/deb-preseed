@@ -1,6 +1,5 @@
 # traefik‑proxy/docker-compose.yml
 version: "3.8"
-
 services:
   traefik:
     image: traefik:v2.10
@@ -16,6 +15,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./acme.json:/letsencrypt/acme.json
-    # override only the email setting via CLI flag
+    # Remove the direct variable reference
     command:
       - "--certificatesResolvers.le.acme.email=${ACME_EMAIL}"
