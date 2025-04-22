@@ -1,3 +1,4 @@
 !.gitignore
 *.iso
 .*
+hosts/misc/docker-compose/traefik/acme.json
