@@ -313,8 +313,6 @@ port() {
     echo ""
 }
 
-#!/bin/bash
-
 pushseed() {
     # Set the target repository and branch
     local repo_url="git@github.com:clearcmos/deb-preseed.git"
