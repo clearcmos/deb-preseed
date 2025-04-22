@@ -90,40 +90,50 @@
             echo -e "\nError: Password cannot be empty"
         done
         
-        # Create temp directory for mounting SMB share
-        TEMP_MOUNT=$(mktemp -d)
-        trap 'rmdir "$TEMP_MOUNT" 2>/dev/null || true' EXIT
-        
         echo "Fetching encrypted token from syno.home.arpa..."
-        # Mount SMB share temporarily
-        mount -t cifs //syno.home.arpa/deployment "$TEMP_MOUNT" -o guest,ro 2>/dev/null
         
-        if [ $? -eq 0 ]; then
-            if [ -f "$TEMP_MOUNT/encrypted-1p-token" ]; then
+        # Check if smbclient is installed
+        if ! which smbclient >/dev/null 2>&1; then
+            echo "Installing smbclient..."
+            sudo apt-get update && sudo apt-get install -y smbclient
+            
+            if ! which smbclient >/dev/null 2>&1; then
+                echo "Error: Failed to install smbclient. Cannot fetch token."
+                return 1
+            fi
+        fi
+        
+        # Create a temporary directory for the token
+        TOKEN_DIR=$(mktemp -d)
+        trap 'rm -rf "$TOKEN_DIR" 2>/dev/null || true' EXIT
+        
+        # Use smbclient to fetch the encrypted token
+        if smbclient //syno.home.arpa/deployment -U 'guest%' -c "prompt OFF; lcd $TOKEN_DIR; get encrypted-1p-token" > /dev/null 2>&1; then
+            if [ -f "$TOKEN_DIR/encrypted-1p-token" ]; then
                 # Decrypt the token file with the provided password
-                token=$(openssl enc -aes-256-cbc -d -salt -in "$TEMP_MOUNT/encrypted-1p-token" -pass pass:"$decrypt_password" 2>/dev/null)
+                # Using pbkdf2 with 100000 iterations for stronger security
+                token=$(openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -d -salt -in "$TOKEN_DIR/encrypted-1p-token" -pass pass:"$decrypt_password" 2>/dev/null)
                 
                 # Check if decryption was successful
                 if [ $? -ne 0 ]; then
                     echo "Error: Failed to decrypt token. Incorrect password."
-                    umount "$TEMP_MOUNT" 2>/dev/null
-                    rmdir "$TEMP_MOUNT" 2>/dev/null
+                    rm -rf "$TOKEN_DIR"
                     return 1
                 fi
             else
-                echo "Error: Encrypted token file not found at syno.home.arpa/deployment"
-                umount "$TEMP_MOUNT" 2>/dev/null
-                rmdir "$TEMP_MOUNT" 2>/dev/null
+                echo "Error: Failed to retrieve encrypted token file"
+                rm -rf "$TOKEN_DIR"
                 return 1
             fi
-            # Unmount SMB share
-            umount "$TEMP_MOUNT" 2>/dev/null
-            rmdir "$TEMP_MOUNT" 2>/dev/null
         else
-            echo "Error: Could not connect to syno.home.arpa/deployment"
-            rmdir "$TEMP_MOUNT" 2>/dev/null
+            echo "Error: Could not connect to syno.home.arpa/deployment using SMB"
+            echo "Make sure the server is accessible and the share exists."
+            rm -rf "$TOKEN_DIR"
             return 1
         fi
+        
+        # Clean up
+        rm -rf "$TOKEN_DIR"
         
         echo "Token successfully decrypted."
         
