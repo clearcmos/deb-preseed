@@ -1,6 +1,8 @@
 alias compress='dir=$(basename "$(pwd)"); tar -czf "${dir}.tar.gz" ./*'
+alias down='sudo docker-compose --env-file /etc/secrets/.docker down'
 alias gen='openssl rand -base64 45'
 alias inquire='apt list --upgradable'
 alias ls='ls -l -h --group-directories-first --color=auto'
 alias mine='sudo chown -R $(whoami):$(whoami)'
 alias refresh='sudo source /etc/profile'
+alias up='sudo docker-compose --env-file /etc/secrets/.docker up'
