@@ -7,7 +7,7 @@ services:
     container_name: traefik
     restart: unless-stopped
     env_file:
-      - .env
+      - /etc/secrets/.docker
     # publish ports for HTTP → ACME challenge & HTTPS
     ports:
       - "80:80"
