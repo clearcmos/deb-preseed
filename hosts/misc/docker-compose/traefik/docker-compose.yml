@@ -15,7 +15,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./acme.json:/letsencrypt/acme.json
+      - /etc/secrets/.acme:/letsencrypt/acme.json
     # override only the email setting via CLI flag
     command:
       - "--certificatesResolvers.le.acme.email=${ACME_EMAIL}"
