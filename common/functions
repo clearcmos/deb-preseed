@@ -379,12 +379,13 @@ pushseed() {
     return 1
   fi
   
-  # Read the token
-  local token=$(cat "$token_file")
-  if [ -z "$token" ]; then
-    echo "GitHub token is empty in $token_file"
+  # Source the file to get the exported variable
+  source "$token_file"
+  if [ -z "$GITHUB_TOKEN" ]; then
+    echo "GITHUB_TOKEN variable not found or empty in $token_file"
     return 1
   fi
+  local token="$GITHUB_TOKEN"
   
   # Set remote URL with token authentication
   local repo_url="https://${token}@github.com/${repo_name}.git"
