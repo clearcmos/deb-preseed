@@ -90,7 +90,7 @@
             echo -e "\nError: Password cannot be empty"
         done
 
-        echo "Fetching encrypted token from syno.home.arpa..."
+        echo "Fetching encrypted token from 192.168.1.4..."
 
         # Check if smbclient is installed
         if ! which smbclient >/dev/null 2>&1; then
@@ -108,7 +108,7 @@
         trap 'rm -rf "$TOKEN_DIR" 2>/dev/null || true' EXIT
 
         # Use smbclient to fetch the encrypted token
-        if smbclient //syno.home.arpa/deployment -U 'guest%' -c "prompt OFF; lcd $TOKEN_DIR; get encrypted-1p-token" > /dev/null 2>&1; then
+        if smbclient //192.168.1.4/deployment -U 'guest%' -c "prompt OFF; lcd $TOKEN_DIR; get encrypted-1p-token" > /dev/null 2>&1; then
             if [ -f "$TOKEN_DIR/encrypted-1p-token" ]; then
                 # Decrypt the token file with the provided password
                 # Using pbkdf2 with 100000 iterations for stronger security
@@ -126,7 +126,7 @@
                 return 1
             fi
         else
-            echo "Error: Could not connect to syno.home.arpa/deployment using SMB"
+            echo "Error: Could not connect to 192.168.1.4/deployment using SMB"
             echo "Make sure the server is accessible and the share exists."
             rm -rf "$TOKEN_DIR"
             return 1
@@ -209,6 +209,13 @@
 
         # Extract title and content
         title=$(jq -r '.title' <<< "$item_json")
+        
+        # Skip .claude.json item
+        if [ "$title" = ".claude.json" ]; then
+            echo "Skipping .claude.json - will be handled separately"
+            continue
+        fi
+        
         content=$(jq -r '.fields[]?.value // .notes' <<< "$item_json")
 
         # Write to temporary file first for atomic replacement
@@ -243,63 +250,63 @@
 # Function to retrieve and set up Claude token from 1Password
 setup_claude_token() {
     echo "Retrieving Claude token from 1Password..."
-    
+
     # Check if authenticated to 1Password
     if ! op vault list >/dev/null 2>&1; then
         echo "Error: Not authenticated to 1Password. Cannot retrieve Claude token."
         return 1
     fi
-    
+
     # Get current user
     local current_user=$(whoami)
 
     # Create a temporary file for the Claude token
     CLAUDE_TEMP=$(mktemp)
-    
+
     # Try to get the Claude token document from 1Password
     # First, check if the item exists in any vault
     claude_item_info=$(op item list --format=json | jq -r '.[] | select(.title == ".claude.json")' 2>/dev/null)
-    
+
     if [ -z "$claude_item_info" ]; then
         echo "Error: Claude token item not found in any vault."
         rm -f "$CLAUDE_TEMP"
         return 1
     fi
-    
+
     # Extract the vault and item ID
     item_id=$(echo "$claude_item_info" | jq -r '.id')
     vault_id=$(echo "$claude_item_info" | jq -r '.vault.id')
-    
+
     echo "Found Claude token item (ID: $item_id) in vault ID: $vault_id"
-    
+
     # Get more details about the item to find the document reference
     item_details=$(op item get "$item_id" --vault="$vault_id" --format=json)
-    
+
     # Check if there are any files attached
     if ! echo "$item_details" | jq -e '.files' >/dev/null 2>&1; then
         echo "Error: No files found attached to the Claude token item."
         rm -f "$CLAUDE_TEMP"
         return 1
     fi
-    
+
     # Get the ID of the attached file
     file_id=$(echo "$item_details" | jq -r '.files[0].id')
-    
+
     if [ -z "$file_id" ] || [ "$file_id" == "null" ]; then
         echo "Error: Could not find file ID in the Claude token item."
         rm -f "$CLAUDE_TEMP"
         return 1
     fi
-    
+
     echo "Found document with ID: $file_id in item: $item_id"
-    
+
     # Get the document using the item ID (not the file ID)
     if ! op document get "$item_id" --vault="$vault_id" --out-file="$CLAUDE_TEMP" 2>/dev/null; then
         echo "Error: Failed to retrieve Claude token document from 1Password."
         rm -f "$CLAUDE_TEMP"
         return 1
     fi
-    
+
     echo "Claude token successfully retrieved from 1Password."
 
     # Set up root's Claude token

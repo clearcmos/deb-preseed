@@ -1,4 +1,5 @@
 !.gitignore
 *.iso
+*.qcow2
 .*
 hosts/misc/docker-compose/traefik/acme.json
