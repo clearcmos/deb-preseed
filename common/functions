@@ -1,7 +1,7 @@
 1p() {
     # First, run the 1p setup
     echo "Setting up 1Password CLI..."
-    
+
     # Better check if actually installed and executable
     if ! which op >/dev/null 2>&1; then
         echo "Installing 1Password CLI..."
@@ -81,7 +81,7 @@
     if [ "$token_loaded_from_file" = false ]; then
         # Secure credential input
         echo -e "\nDecrypting 1Password token:"
-        
+
         # Get password from user to decrypt token
         while true; do
             read -rsp "Enter password to decrypt token: " decrypt_password
@@ -89,31 +89,31 @@
             [[ -n "$decrypt_password" ]] && break
             echo -e "\nError: Password cannot be empty"
         done
-        
+
         echo "Fetching encrypted token from syno.home.arpa..."
-        
+
         # Check if smbclient is installed
         if ! which smbclient >/dev/null 2>&1; then
             echo "Installing smbclient..."
             sudo apt-get update && sudo apt-get install -y smbclient
-            
+
             if ! which smbclient >/dev/null 2>&1; then
                 echo "Error: Failed to install smbclient. Cannot fetch token."
                 return 1
             fi
         fi
-        
+
         # Create a temporary directory for the token
         TOKEN_DIR=$(mktemp -d)
         trap 'rm -rf "$TOKEN_DIR" 2>/dev/null || true' EXIT
-        
+
         # Use smbclient to fetch the encrypted token
-        if smbclient //syno.home.arpa/deployment -U 'guest%' -c "prompt OFF; lcd $TOKEN_DIR; get encrypted-1p-token" > /dev/null 2>&1; then
+        if smbclient //syno.home.arpa/deployment -U 'guest%' -c "prompt OFF; lcd $TOKEN_DIR; get encrypted-1p-token; get encrypted-claude-token" > /dev/null 2>&1; then
             if [ -f "$TOKEN_DIR/encrypted-1p-token" ]; then
                 # Decrypt the token file with the provided password
                 # Using pbkdf2 with 100000 iterations for stronger security
                 token=$(openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -d -salt -in "$TOKEN_DIR/encrypted-1p-token" -pass pass:"$decrypt_password" 2>/dev/null)
-                
+
                 # Check if decryption was successful
                 if [ $? -ne 0 ]; then
                     echo "Error: Failed to decrypt token. Incorrect password."
@@ -125,18 +125,57 @@
                 rm -rf "$TOKEN_DIR"
                 return 1
             fi
+            
+            # Process Claude token if available
+            if [ -f "$TOKEN_DIR/encrypted-claude-token" ]; then
+                echo "Decrypting Claude token..."
+                
+                # Create a temporary file for the Claude token
+                CLAUDE_TEMP=$(mktemp)
+                
+                # Decrypt the Claude token file with the same password
+                if ! openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -d -salt -in "$TOKEN_DIR/encrypted-claude-token" -out "$CLAUDE_TEMP" -pass pass:"$decrypt_password" 2>/dev/null; then
+                    echo "Error: Failed to decrypt Claude token. Skipping Claude setup."
+                else
+                    echo "Claude token successfully decrypted."
+                    
+                    # Get current user
+                    current_user=$(whoami)
+                    
+                    # Set up root's Claude token
+                    echo "Setting up Claude token for root..."
+                    sudo mkdir -p /root
+                    sudo cp "$CLAUDE_TEMP" /root/.claude.json
+                    sudo chown root:root /root/.claude.json
+                    sudo chmod 600 /root/.claude.json
+                    
+                    # Set up user's Claude token
+                    echo "Setting up Claude token for $current_user..."
+                    mkdir -p "/home/$current_user"
+                    cp "$CLAUDE_TEMP" "/home/$current_user/.claude.json"
+                    chown "$current_user:$current_user" "/home/$current_user/.claude.json"
+                    chmod 644 "/home/$current_user/.claude.json"
+                    
+                    # Clean up temporary file
+                    rm -f "$CLAUDE_TEMP"
+                    
+                    echo "Claude token setup complete."
+                fi
+            else
+                echo "Note: No Claude token found. Skipping Claude setup."
+            fi
         else
             echo "Error: Could not connect to syno.home.arpa/deployment using SMB"
             echo "Make sure the server is accessible and the share exists."
             rm -rf "$TOKEN_DIR"
             return 1
         fi
-        
+
         # Clean up
         rm -rf "$TOKEN_DIR"
-        
-        echo "Token successfully decrypted."
-        
+
+        echo "1Password token successfully decrypted."
+
         # Set the service account token
         export OP_SERVICE_ACCOUNT_TOKEN="$token"
 
@@ -147,7 +186,7 @@
             return 1
         fi
 
-        echo -e "\nSuccessfully authenticated!"
+        echo -e "\n1Password successfully authenticated!"
     fi
 
     # Now proceed with the secrets management part
@@ -206,15 +245,15 @@
     for id in $items; do
         # Get item details with explicit --vault flag
         item_json=$(op item get "$id" --vault "Debian" --format json)
-        
+
         # Extract title and content
         title=$(jq -r '.title' <<< "$item_json")
         content=$(jq -r '.fields[]?.value // .notes' <<< "$item_json")
-        
+
         # Write to temporary file first for atomic replacement
         temp_file=$(mktemp)
         echo "$content" > "$temp_file"
-        
+
         # Move with proper ownership and permissions
         sudo mv "$temp_file" "/etc/secrets/${title}"
         sudo chown root:secrets "/etc/secrets/${title}"
@@ -222,7 +261,7 @@
     done
 
     echo "Vault items exported successfully."
-    
+
     # Only remind about login if user was just added to the group
     if ! id -nG "$current_user" | grep -qw "secrets"; then
         echo "Note: You may need to log out and back in for group membership to take effect."
