@@ -14,4 +14,4 @@ source /etc/functions
 source /etc/aliases
 
 # Run the commands
-1p && cd hosts/$HOSTNAME/docker-compose && up && cd ~
+1p && ./hosts/$HOSTNAME/base.sh && cd hosts/$HOSTNAME/docker-compose && up && cd ~
