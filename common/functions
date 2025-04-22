@@ -361,52 +361,49 @@ port() {
 }
 
 pushseed() {
-    # Set the target repository and branch
-    local repo_url="git@github.com:clearcmos/deb-preseed.git"
-    local branch="main"
-    
-    # Check if git is configured correctly
-    local current_remote=$(git config --get remote.origin.url 2>/dev/null)
-    
-    # If remote is not set or is different
-    if [ -z "$current_remote" ] || [ "$current_remote" != "$repo_url" ]; then
-        echo "Configuring git remote to push to $repo_url..."
-        git remote remove origin 2>/dev/null
-        git remote add origin "$repo_url"
-        git branch --set-upstream-to=origin/$branch $branch 2>/dev/null
-    fi
-    
-    # Test SSH connection to GitHub
-    echo "Testing SSH connection to GitHub..."
-    if ! ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
-        echo "SSH key not configured properly for GitHub."
-        echo "Please add your SSH key to your GitHub account:"
-        
-        # Check if SSH key exists
-        if [ -f ~/.ssh/id_ed25519.pub ]; then
-            echo "Here is your public SSH key to add to GitHub:"
-            echo "---------- COPY FROM HERE ----------"
-            cat ~/.ssh/id_ed25519.pub
-            echo "---------- COPY TO HERE ----------"
-            echo ""
-        else
-            echo "1. SSH key not found. Create one: ssh-keygen -t ed25519 -C \"your_email@example.com\""
-            echo "2. Start ssh-agent: eval \$(ssh-agent -s)"
-            echo "3. Add your key: ssh-add ~/.ssh/id_ed25519"
-        fi
-        
-        echo "Add this key to your GitHub account at: https://github.com/settings/keys"
-        echo "Run 'pushseed' again after you've configured the SSH key."
-        return 1
-    fi
-    
-    # Proceed with pushing changes
-    echo "Pushing changes to $branch branch on $repo_url..."
-    git add .
-    git commit -m "update"
-    git push origin $branch
-    
-    echo "Done! Changes have been pushed to $branch."
+  # Set the target repository and branch
+  local repo_name="clearcmos/deb-preseed"
+  local branch="main"
+  local token_file="/etc/secrets/.github"
+  
+  # Check if token file exists
+  if [ ! -f "$token_file" ]; then
+    echo "GitHub token file not found at $token_file"
+    return 1
+  fi
+  
+  # Read the token
+  local token=$(cat "$token_file")
+  if [ -z "$token" ]; then
+    echo "GitHub token is empty in $token_file"
+    return 1
+  fi
+  
+  # Set remote URL with token authentication
+  local repo_url="https://${token}@github.com/${repo_name}.git"
+  
+  # Configure git if needed
+  local current_remote=$(git config --get remote.origin.url 2>/dev/null)
+  # We don't compare URLs directly as they might contain the token
+  if [ -z "$current_remote" ] || ! echo "$current_remote" | grep -q "$repo_name"; then
+    echo "Configuring git remote..."
+    git remote remove origin 2>/dev/null
+    git remote add origin "$repo_url"
+    git branch --set-upstream-to=origin/$branch $branch 2>/dev/null
+  fi
+  
+  # Proceed with pushing changes
+  echo "Pushing changes to $branch branch..."
+  git add .
+  git commit -m "update"
+  
+  # Configure Git to not show credentials in error messages
+  git config --local credential.helper ""
+  
+  # Push changes
+  git push origin $branch
+  
+  echo "Done! Changes have been pushed to $branch."
 }
 
 pw() {
