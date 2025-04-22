@@ -1,8 +1,4 @@
 #!/bin/bash
-# Debian System Setup Script
-#
-# This script automates the setup of a Debian-based system with package installation,
-# user configuration, SSH setup, and SMB/CIFS share discovery and mounting.
 
 # Setup logging
 LOG_FILE="base.log"
@@ -89,7 +85,6 @@ log_error() {
 # Global variables
 ERROR_FLAG=false
 CURRENT_NON_ROOT_USER=""
-USERMOD_AVAILABLE=true
 
 # Run a command and log the output
 run_command() {
@@ -185,19 +180,6 @@ parse_output() {
   STDERR="$3"
 }
 
-# Check if a package is installed
-is_installed() {
-  local package="$1"
-  parse_output $(run_command "dpkg -l $package" "true" "false")
-  
-  # Check if package exists in dpkg database AND has "ii" status (properly installed)
-  if [[ $RET_CODE -eq 0 && $(echo "$STDOUT" | grep -E "^ii") ]]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
 # Detect the correct non-root user
 detect_non_root_user() {
   if [[ $EUID -eq 0 ]]; then
@@ -234,74 +216,6 @@ detect_non_root_user() {
     # Running as non-root
     echo "$USER"
   fi
-}
-
-# Setup repositories for package installation
-setup_repositories() {
-  # Update apt with error handling
-  log_info "Updating apt package lists..."
-  parse_output $(run_command "apt update" "true" "false")
-  
-  if [[ $RET_CODE -ne 0 ]]; then
-    log_error "apt update failed: $STDERR"
-    log_info "Continuing with script execution..."
-  else
-    log_info "apt update completed successfully"
-  fi
-}
-
-# Function removed - no longer needed for package selection
-
-# Install packages
-install_packages() {
-  # Skip package installation - sudo and python3 should already be present
-  log_info "Skipping package installation - sudo and python3 should already be present."
-}
-
-# Setup user and permissions
-setup_user() {
-  # Create user if doesn't exist
-  parse_output $(run_command "id $CURRENT_NON_ROOT_USER" "true" "false")
-  
-  if [[ "$STDERR" == *"no such user"* ]]; then
-    log_info "Creating user $CURRENT_NON_ROOT_USER..."
-    parse_output $(run_command "useradd -m -s /bin/bash $CURRENT_NON_ROOT_USER" "true")
-  else
-    log_info "User $CURRENT_NON_ROOT_USER already exists, skipping."
-  fi
-  
-  # Add user to sudoers if not already added
-  local sudoers_file="/etc/sudoers.d/$CURRENT_NON_ROOT_USER"
-  if [[ ! -f "$sudoers_file" ]]; then
-    log_info "Adding $CURRENT_NON_ROOT_USER to sudoers file directly..."
-    echo "$CURRENT_NON_ROOT_USER ALL=(ALL) ALL" > "$sudoers_file"
-    chmod 0440 "$sudoers_file"
-    log_info "$CURRENT_NON_ROOT_USER added to sudoers directly via $sudoers_file."
-  else
-    log_info "Sudoers file for $CURRENT_NON_ROOT_USER already exists, skipping."
-  fi
-  
-  # Add user to sudo group
-  parse_output $(run_command "groups $CURRENT_NON_ROOT_USER" "true" "false")
-  local groups_output="$STDOUT"
-  
-  if [[ "$groups_output" != *"sudo"* ]]; then
-    log_info "Adding $CURRENT_NON_ROOT_USER to sudo group..."
-    if [[ "$USERMOD_AVAILABLE" == "true" ]]; then
-      parse_output $(run_command "usermod -aG sudo $CURRENT_NON_ROOT_USER" "true")
-    else
-      log_info "Using alternative method to add $CURRENT_NON_ROOT_USER to sudo group..."
-      # Read the group file
-      if grep -q "^sudo:" /etc/group; then
-        # Add user to sudo group
-        sed -i "s/^sudo:.*/&,$CURRENT_NON_ROOT_USER/" /etc/group
-      fi
-    fi
-    log_info "$CURRENT_NON_ROOT_USER added to sudo group."
-  else
-    log_info "$CURRENT_NON_ROOT_USER is already in sudo group, skipping."
-  fi
-  
 }
 
 # Configure SSH server
@@ -579,20 +493,12 @@ EOF
   parse_output $(run_command "find /etc -name '.smb_*' -exec chmod 0640 {} \\;" "true" "false")
   parse_output $(run_command "find /etc -name '.smb_*' -exec chown root:secrets {} \\;" "true" "false")
   
-  # Clear password from memory (bash doesn't have unset for elements within a pipe-delimited string)
-  # But the function will exit soon anyway, clearing local variables
+  # Note: Function will exit soon, clearing local variables automatically
 }
 
 # Setup automatic security updates
 setup_security_updates() {
   log_info "Setting up automatic security updates..."
-  
-  # Install unattended-upgrades if not already installed
-  if ! is_installed "unattended-upgrades"; then
-    log_info "Installing unattended-upgrades package..."
-    parse_output $(run_command "apt update" "true")
-    parse_output $(run_command "apt install -y unattended-upgrades apt-listchanges" "true")
-  fi
   
   # Configure unattended-upgrades
   log_info "Configuring unattended-upgrades..."
@@ -659,80 +565,6 @@ EOF
   log_info "Automatic updates configuration completed."
 }
 
-# Setup SSH keys for user
-setup_ssh_keys() {
-  log_debug "Starting SSH key setup at $(date "+%Y-%m-%d %H:%M:%S")"
-  
-  log_info "Setting up SSH keys for $CURRENT_NON_ROOT_USER..."
-  log_debug "Will configure SSH keys for user: $CURRENT_NON_ROOT_USER"
-  
-  # Get user's home directory
-  log_debug "Getting home directory for user $CURRENT_NON_ROOT_USER"
-  parse_output $(run_command "getent passwd $CURRENT_NON_ROOT_USER | cut -d: -f6" "true")
-  
-  local user_home
-  if [[ $RET_CODE -ne 0 ]]; then
-    log_error "Failed to get home directory: $STDERR"
-    log_debug "Home directory command failed with exit code $RET_CODE"
-    # Use a fallback approach
-    log_debug "Attempting fallback approach to determine home directory"
-    if [[ "$CURRENT_NON_ROOT_USER" == "root" ]]; then
-      user_home="/root"
-    else
-      user_home="/home/$CURRENT_NON_ROOT_USER"
-    fi
-    log_debug "Using fallback home directory: $user_home"
-  else
-    user_home=$(echo "$STDOUT" | tr -d '[:space:]')
-    log_debug "Found home directory: $user_home"
-  fi
-  
-  local ssh_dir="$user_home/.ssh"
-  log_debug "SSH directory path: $ssh_dir"
-  
-  # Create SSH directory if it doesn't exist
-  if [[ ! -d "$ssh_dir" ]]; then
-    log_info "Creating SSH directory for $CURRENT_NON_ROOT_USER..."
-    mkdir -p "$ssh_dir"
-    parse_output $(run_command "chmod 700 $ssh_dir" "true")
-    parse_output $(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $ssh_dir" "true")
-  fi
-  
-  # Generate SSH key if it doesn't exist
-  if [[ ! -f "$ssh_dir/id_rsa" && ! -f "$ssh_dir/id_rsa.pub" ]]; then
-    log_info "Generating SSH key for $CURRENT_NON_ROOT_USER..."
-    parse_output $(run_command "sudo -u $CURRENT_NON_ROOT_USER ssh-keygen -t rsa -N \"\" -f $ssh_dir/id_rsa" "true")
-    log_info "SSH key generated successfully."
-  else
-    log_info "SSH key already exists for $CURRENT_NON_ROOT_USER, skipping generation."
-  fi
-  
-  # Setup authorized_keys
-  local authorized_keys="$ssh_dir/authorized_keys"
-  if [[ ! -f "$authorized_keys" ]]; then
-    log_info "Creating authorized_keys file..."
-    touch "$authorized_keys"
-    parse_output $(run_command "chmod 600 $authorized_keys" "true")
-    parse_output $(run_command "chown $CURRENT_NON_ROOT_USER:$CURRENT_NON_ROOT_USER $authorized_keys" "true")
-    
-    log_info "$(green "Please paste your public SSH key to add to authorized_keys (press ENTER when done):")" "color"
-    read -r ssh_key
-    
-    if [[ -n "$ssh_key" ]]; then
-      echo "$ssh_key" > "$authorized_keys"
-      log_info "$(green "Public key added to authorized_keys.")" "color"
-    fi
-  else
-    # Just log that authorized_keys exists without asking
-    log_info "SSH authorized_keys file already exists."
-    log_debug "To add a new key manually: echo 'YOUR_PUBLIC_KEY' >> $authorized_keys"
-  fi
-  
-  # Restart SSH service
-  log_info "Restarting SSH service..."
-  parse_output $(run_command "systemctl restart sshd" "true")
-  parse_output $(run_command "systemctl status sshd --no-pager" "true")
-}
 
 # Final steps and summary
 finalize_script() {
@@ -752,7 +584,6 @@ finalize_script() {
     log_info "- SSH access is restricted to user: $(cyan "$CURRENT_NON_ROOT_USER and root")" "color"
     log_info "- Access is restricted to LAN IPs (192.168.1.0/24 network)"
     log_info "- Root login is enabled"
-    log_info "- SSH key authentication is enabled"
     log_info "- Password authentication is disabled"
     
     log_info "You can now connect to this server using: $(green "ssh ${CURRENT_NON_ROOT_USER}@hostname")" "color" 
@@ -813,7 +644,7 @@ main() {
   
   if [[ $EUID -ne 0 ]]; then
     # Not running as root
-    log_info "$(yellow "Not running as root. Will be asking for root credentials once to setup...")" "color"
+    log_info "$(yellow "Not running as root. Elevated privileges required...")" "color"
     
     # Check if sudo is available
     parse_output $(run_command "which sudo" "true" "false")
@@ -824,50 +655,16 @@ main() {
       log_info "$(yellow "Please enter your password when prompted (should only be once)...")" "color"
       sudo -E bash "$script_path"
       exit 0
-    else  # Sudo not available, need to install it with su
-      log_info "$(yellow "sudo is not available. Installing sudo automatically...")" "color"
-      log_info "$(yellow "Prompting for root password to install sudo and essential packages...")" "color"
-      
-      # Create a single script to handle all root operations at once to minimize password prompts
-      temp_setup_script="/tmp/debian_setup_root.sh"
-      cat > "$temp_setup_script" << EOF
-#!/bin/bash
-# Add user to sudoers
-echo "Adding user $CURRENT_NON_ROOT_USER to sudoers..."
-echo "$CURRENT_NON_ROOT_USER ALL=(ALL) ALL" > /etc/sudoers.d/$CURRENT_NON_ROOT_USER
-chmod 0440 /etc/sudoers.d/$CURRENT_NON_ROOT_USER
-
-echo "Setup completed. User $CURRENT_NON_ROOT_USER can now use sudo."
-EOF
-      chmod 0755 "$temp_setup_script"
-      
-      # Run the temporary script with su - do everything at once
-      log_info "$(blue "Running su to perform root setup operations (single password prompt)...")" "color"
-      su -c "$temp_setup_script" root
-      
-      # Cleanup temporary script
-      if ! rm "$temp_setup_script"; then
-        log_warning "Failed to remove temporary setup script: $?"
-      fi
-      
-      # Now that sudo should be available, restart with sudo
-      log_info "$(green "Setup complete, restarting with sudo privileges...")" "color"
-      script_path=$(readlink -f "$0")
-      sudo -E bash "$script_path"
-      exit 0
+    else  # Sudo not available, need root directly
+      log_info "$(yellow "sudo is not available. You need to run this script as root.")" "color"
+      log_info "$(yellow "Please run 'su -' to become root, then run this script again.")" "color"
+      exit 1
     fi
   fi
   
   log_info "Running as root user: $(id -un)"
   log_info "Detected non-root user: $CURRENT_NON_ROOT_USER"
-  
-  # Setup repositories for package installation
-  setup_repositories
-  
-  # Install selected packages
-  install_packages
-  
-  
+
   # Configure SSH server
   configure_ssh
   
@@ -876,9 +673,6 @@ EOF
   
   # Setup automatic security updates
   setup_security_updates
-  
-  # Setup SSH keys
-  setup_ssh_keys
   
   # Finish up
   finalize_script
