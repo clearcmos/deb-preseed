@@ -1,5 +1,32 @@
 1p() {
-    # First, run the 1p setup
+    # Silent dependency check and installation
+    {
+        # List of required packages (excluding 1password-cli which is installed separately)
+        local required_packages=("curl" "gpg" "cmp" "smbclient" "jq" "openssl" "getent" "sudo")
+        local missing_packages=()
+        
+        # Check which packages are missing
+        for pkg in "${required_packages[@]}"; do
+            if ! command -v "$pkg" >/dev/null 2>&1; then
+                # Special case for cmp which is part of diffutils
+                if [ "$pkg" = "cmp" ]; then
+                    if ! dpkg -l diffutils >/dev/null 2>&1; then
+                        missing_packages+=("diffutils")
+                    fi
+                else
+                    missing_packages+=("$pkg")
+                fi
+            fi
+        done
+        
+        # Install missing packages if any
+        if [ ${#missing_packages[@]} -gt 0 ]; then
+            DEBIAN_FRONTEND=noninteractive sudo apt-get update -qq >/dev/null 2>&1
+            DEBIAN_FRONTEND=noninteractive sudo apt-get install -qq -y "${missing_packages[@]}" >/dev/null 2>&1
+        fi
+    } >/dev/null 2>&1
+    
+    # Start of visible output
     echo "Setting up 1Password CLI..."
 
     # Better check if actually installed and executable
@@ -92,15 +119,10 @@
 
         echo "Fetching encrypted token from 192.168.1.4..."
 
-        # Check if smbclient is installed
+        # smbclient should already be installed by our pre-check
         if ! which smbclient >/dev/null 2>&1; then
-            echo "Installing smbclient..."
-            sudo apt-get update && sudo apt-get install -y smbclient
-
-            if ! which smbclient >/dev/null 2>&1; then
-                echo "Error: Failed to install smbclient. Cannot fetch token."
-                return 1
-            fi
+            echo "Error: smbclient not available. Cannot fetch token."
+            return 1
         fi
 
         # Create a temporary directory for the token
@@ -300,8 +322,8 @@ setup_claude_token() {
 
     echo "Found document with ID: $file_id in item: $item_id"
 
-    # Get the document using the item ID (not the file ID)
-    if ! op document get "$item_id" --vault="$vault_id" --out-file="$CLAUDE_TEMP" 2>/dev/null; then
+    # Get the document using the item ID (not the file ID) with force flag to prevent prompts
+    if ! op document get "$item_id" --vault="$vault_id" --out-file="$CLAUDE_TEMP" --force 2>/dev/null; then
         echo "Error: Failed to retrieve Claude token document from 1Password."
         rm -f "$CLAUDE_TEMP"
         return 1
@@ -368,6 +390,26 @@ port() {
 }
 
 pushseed() {
+  # Silent dependency check and installation
+  {
+    # List of required packages
+    local required_packages=("git" "grep" "sudo")
+    local missing_packages=()
+    
+    # Check which packages are missing
+    for pkg in "${required_packages[@]}"; do
+      if ! command -v "$pkg" >/dev/null 2>&1; then
+        missing_packages+=("$pkg")
+      fi
+    done
+    
+    # Install missing packages if any
+    if [ ${#missing_packages[@]} -gt 0 ]; then
+      DEBIAN_FRONTEND=noninteractive sudo apt-get update -qq >/dev/null 2>&1
+      DEBIAN_FRONTEND=noninteractive sudo apt-get install -qq -y "${missing_packages[@]}" >/dev/null 2>&1
+    fi
+  } >/dev/null 2>&1
+
   # Set the target repository and branch
   local repo_name="clearcmos/deb-preseed"
   local branch="main"
@@ -402,6 +444,15 @@ pushseed() {
   
   # Proceed with pushing changes
   echo "Pushing changes to $branch branch..."
+  
+  # Set git identity if not already configured
+  if ! git config user.email >/dev/null 2>&1; then
+    git config --local user.email "whatever@domain.com"
+  fi
+  if ! git config user.name >/dev/null 2>&1; then
+    git config --local user.name "clearcmos"
+  fi
+  
   git add .
   git commit -m "update"
   
