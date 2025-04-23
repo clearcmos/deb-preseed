@@ -281,6 +281,35 @@ setup_claude_token() {
 
     # Get current user
     local current_user=$(whoami)
+    
+    # Check if existing claude.json files have more than 20 lines
+    local root_file_exists=false
+    local user_file_exists=false
+    
+    # Check root's claude.json - use sudo to check if it exists and has sufficient lines
+    if sudo test -f "/root/.claude.json"; then
+        # Using sudo with a shell command to handle file redirection properly
+        local root_lines=$(sudo bash -c "wc -l < /root/.claude.json" 2>/dev/null || echo 0)
+        if [ "$root_lines" -gt 20 ]; then
+            echo "Existing Claude token for root has more than 20 lines - skipping update"
+            root_file_exists=true
+        fi
+    fi
+    
+    # Check user's claude.json
+    if [ -f "/home/$current_user/.claude.json" ]; then
+        local user_lines=$(wc -l < "/home/$current_user/.claude.json" 2>/dev/null || echo 0)
+        if [ "$user_lines" -gt 20 ]; then
+            echo "Existing Claude token for $current_user has more than 20 lines - skipping update"
+            user_file_exists=true
+        fi
+    fi
+    
+    # If both files exist with sufficient content, we can exit early
+    if [ "$root_file_exists" = true ] && [ "$user_file_exists" = true ]; then
+        echo "Existing Claude tokens found for both root and user - no updates needed"
+        return 0
+    fi
 
     # Create a temporary file for the Claude token
     CLAUDE_TEMP=$(mktemp)
@@ -331,19 +360,23 @@ setup_claude_token() {
 
     echo "Claude token successfully retrieved from 1Password."
 
-    # Set up root's Claude token
-    echo "Setting up Claude token for root..."
-    sudo mkdir -p /root
-    sudo cp "$CLAUDE_TEMP" /root/.claude.json
-    sudo chown root:root /root/.claude.json
-    sudo chmod 600 /root/.claude.json
+    # Set up root's Claude token if needed
+    if [ "$root_file_exists" = false ]; then
+        echo "Setting up Claude token for root..."
+        sudo mkdir -p /root
+        sudo cp "$CLAUDE_TEMP" /root/.claude.json
+        sudo chown root:root /root/.claude.json
+        sudo chmod 600 /root/.claude.json
+    fi
 
-    # Set up user's Claude token
-    echo "Setting up Claude token for $current_user..."
-    mkdir -p "/home/$current_user"
-    cp "$CLAUDE_TEMP" "/home/$current_user/.claude.json"
-    chown "$current_user:$current_user" "/home/$current_user/.claude.json"
-    chmod 644 "/home/$current_user/.claude.json"
+    # Set up user's Claude token if needed
+    if [ "$user_file_exists" = false ]; then
+        echo "Setting up Claude token for $current_user..."
+        mkdir -p "/home/$current_user"
+        cp "$CLAUDE_TEMP" "/home/$current_user/.claude.json"
+        chown "$current_user:$current_user" "/home/$current_user/.claude.json"
+        chmod 644 "/home/$current_user/.claude.json"
+    fi
 
     # Clean up temporary file
     rm -f "$CLAUDE_TEMP"
@@ -488,4 +521,206 @@ pw() {
   fi
 
   openssl rand -base64 $characters
+}
+
+secrets() {
+  # Silent dependency check and installation
+  {
+    # List of required packages
+    local required_packages=("jq" "stat" "sudo" "date")
+    local missing_packages=()
+    
+    # Check which packages are missing
+    for pkg in "${required_packages[@]}"; do
+      if ! command -v "$pkg" >/dev/null 2>&1; then
+        # Special case for stat which is part of coreutils
+        if [ "$pkg" = "stat" ] || [ "$pkg" = "date" ]; then
+          if ! dpkg -l coreutils >/dev/null 2>&1; then
+            missing_packages+=("coreutils")
+          fi
+        else
+          missing_packages+=("$pkg")
+        fi
+      fi
+    done
+    
+    # Install missing packages if any
+    if [ ${#missing_packages[@]} -gt 0 ]; then
+      DEBIAN_FRONTEND=noninteractive sudo apt-get update -qq >/dev/null 2>&1
+      DEBIAN_FRONTEND=noninteractive sudo apt-get install -qq -y "${missing_packages[@]}" >/dev/null 2>&1
+    fi
+  } >/dev/null 2>&1
+  
+  echo "Syncing secrets between 1Password Debian vault and /etc/secrets..."
+  
+  # Check if we already have a token stored
+  local token_loaded_from_file=false
+  if [ -f /etc/secrets/.1p ]; then
+    source /etc/secrets/.1p
+    if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
+      echo "Using stored 1Password service account token."
+      # Test if stored token still works
+      if op vault list >/dev/null 2>&1; then
+        echo "Successfully authenticated!"
+        token_loaded_from_file=true
+      else
+        echo "Stored token is invalid. Run the 1p function to authenticate."
+        return 1
+      fi
+    fi
+  fi
+  
+  if [ "$token_loaded_from_file" = false ]; then
+    echo "No valid 1Password token found. Run the 1p function first to authenticate."
+    return 1
+  fi
+  
+  # Ensure /etc/secrets exists
+  if ! sudo test -d /etc/secrets; then
+    echo "Error: /etc/secrets directory does not exist"
+    return 1
+  fi
+  
+  # Check if we're in the secrets group
+  if ! id -nG | grep -qw "secrets"; then
+    echo "Warning: You're not in the secrets group. Some operations may require sudo."
+  fi
+  
+  # Create a temporary directory for syncing
+  TEMP_DIR=$(mktemp -d)
+  trap 'rm -rf "$TEMP_DIR" 2>/dev/null || true' EXIT
+  
+  echo "Fetching items from 1Password Debian vault..."
+  # Get Debian vault items
+  items=$(op item list --vault "Debian" --format json)
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to list items from 1Password Debian vault"
+    rm -rf "$TEMP_DIR"
+    return 1
+  fi
+  
+  # Get the IDs only
+  item_ids=$(echo "$items" | jq -r '.[].id')
+  
+  # Counter for changes
+  local updated_op_to_local=0
+  local updated_local_to_op=0
+  local identical=0
+  
+  # Process each item
+  for id in $item_ids; do
+    # Get item details
+    item_json=$(op item get "$id" --vault "Debian" --format json)
+    
+    # Extract title and modification time
+    title=$(echo "$item_json" | jq -r '.title')
+    
+    # Skip .claude.json item
+    if [ "$title" = ".claude.json" ]; then
+      echo "Skipping .claude.json item"
+      continue
+    fi
+    
+    # Get last modified time in seconds since epoch
+    # Use updated_at field which records when the item was last modified
+    op_modified=$(echo "$item_json" | jq -r '.updated_at' | date -d "$(cat)" +%s 2>/dev/null)
+    if [ $? -ne 0 ]; then
+      echo "Warning: Could not parse modification time for item: $title, assuming current time"
+      op_modified=$(date +%s)
+    fi
+    
+    # Extract content
+    content=$(echo "$item_json" | jq -r '.fields[]?.value // .notes')
+    
+    # Check if local file exists
+    local_file="/etc/secrets/${title}"
+    if sudo test -f "$local_file"; then
+      # Get local file modification time using sudo
+      local_modified=$(sudo stat -c %Y "$local_file" 2>/dev/null)
+      if [ $? -ne 0 ]; then
+        echo "Warning: Could not get modification time for $local_file, assuming older than vault item"
+        local_modified=0
+      fi
+      
+      # Create temp file for comparison
+      temp_op_file="$TEMP_DIR/op_${title}"
+      echo "$content" > "$temp_op_file"
+      
+      # Compare file contents (using sudo to read local file)
+      if sudo cmp -s "$temp_op_file" "$local_file"; then
+        echo "File $title is identical in vault and locally"
+        identical=$((identical+1))
+      else
+        # Content differs, compare modification times to determine which is newer
+        if [ "$op_modified" -gt "$local_modified" ]; then
+          echo "1Password version of $title is newer - updating local file"
+          # Write to temporary file first for atomic replacement
+          sudo cp "$temp_op_file" "$local_file"
+          sudo chown root:secrets "$local_file"
+          sudo chmod 640 "$local_file"
+          updated_op_to_local=$((updated_op_to_local+1))
+        else
+          echo "Local version of $title is newer - updating 1Password"
+          # Update the vault item
+          local local_content=$(sudo cat "$local_file")
+          
+          # Update the item in 1Password using direct field assignment syntax
+          if op item edit "$id" --vault "Debian" "notesPlain=$local_content" > /dev/null; then
+            echo "Successfully updated $title in 1Password"
+            updated_local_to_op=$((updated_local_to_op+1))
+          else
+            echo "Error: Failed to update $title in 1Password"
+          fi
+        fi
+      fi
+    else
+      # Local file doesn't exist, create it from 1Password
+      echo "File $title exists in vault but not locally - creating local file"
+      temp_file="$TEMP_DIR/${title}"
+      echo "$content" > "$temp_file"
+      
+      # Move with proper ownership and permissions
+      sudo mv "$temp_file" "$local_file"
+      sudo chown root:secrets "$local_file"
+      sudo chmod 640 "$local_file"
+      updated_op_to_local=$((updated_op_to_local+1))
+    fi
+  done
+  
+  # Check for local files that don't exist in 1Password
+  echo "Checking for local files not in 1Password..."
+  # Get list of all secret titles from 1Password
+  op_titles=$(echo "$items" | jq -r '.[].title')
+  
+  # List all files in /etc/secrets
+  local_files=$(sudo find /etc/secrets -maxdepth 1 -type f -exec basename {} \; | grep -v "^\.claude\.json$")
+  
+  for file in $local_files; do
+    # Check if file exists in 1Password titles
+    if ! echo "$op_titles" | grep -q "^$file$"; then
+      echo "File $file exists locally but not in vault - creating in 1Password"
+      
+      # Read file content
+      local content=$(sudo cat "/etc/secrets/$file")
+      
+      # Create the item in 1Password using correct field assignment syntax
+      if op item create --vault "Debian" --category="Secure Note" --title="$file" "notesPlain=$content" > /dev/null; then
+        echo "Successfully created $file in 1Password"
+        updated_local_to_op=$((updated_local_to_op+1))
+      else
+        echo "Error: Failed to create $file in 1Password"
+      fi
+    fi
+  done
+  
+  # Clean up
+  rm -rf "$TEMP_DIR"
+  
+  # Summary
+  echo -e "\nSync complete!"
+  echo "Files identical: $identical"
+  echo "Updated from 1Password to local: $updated_op_to_local"
+  echo "Updated from local to 1Password: $updated_local_to_op"
+  
+  return 0
 }
