@@ -4,12 +4,19 @@ services:
     extends:
       file: ./traefik/docker-compose.yml
       service: traefik
-    env_file:
-      - /etc/secrets/.docker
+  authelia:
+    extends:
+      file: ./authelia/docker-compose.yml
+      service: authelia
+    depends_on:
+      - traefik
   glances:
     extends:
       file: ./glances/docker-compose.yml
       service: glances
+    depends_on:
+      - traefik
+      - authelia
 networks:
   default:
     name: proxy

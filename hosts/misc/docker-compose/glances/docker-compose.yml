@@ -17,3 +17,5 @@ services:
       - "traefik.http.routers.glances.entrypoints=websecure"
       - "traefik.http.routers.glances.tls.certresolver=le"
       - "traefik.http.services.glances.loadbalancer.server.port=61208"
+      # Authelia middleware
+      - "traefik.http.routers.glances.middlewares=authelia@docker"

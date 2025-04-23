@@ -4,3 +4,5 @@
 .*
 base.log
 hosts/misc/docker-compose/traefik/acme.json
+**/*.sqlite3
+**/notification.txt

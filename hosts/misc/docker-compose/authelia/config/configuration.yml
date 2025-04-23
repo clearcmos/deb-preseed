@@ -1,0 +1,64 @@
+---
+theme: light
+jwt_secret: ${AUTHELIA_JWT_SECRET}
+default_redirection_url: https://auth.${DOMAIN}
+
+server:
+  host: 0.0.0.0
+  port: 9091
+
+log:
+  level: info
+
+totp:
+  issuer: Authelia
+  period: 30
+  skew: 1
+
+# WebAuthn configuration for passkeys/security keys
+webauthn:
+  display_name: Authelia
+  attestation_conveyance_preference: indirect
+  user_verification: preferred
+  timeout: 60s
+
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+    password:
+      algorithm: argon2id
+      iterations: 1
+      key_length: 32
+      salt_length: 16
+      memory: 128
+      parallelism: 8
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: "auth.${DOMAIN}"
+      policy: bypass
+    # Add rules for each domain you want to protect
+    - domain: "glances.${DOMAIN}"
+      policy: two_factor
+
+session:
+  name: authelia_session
+  secret: ${AUTHELIA_SESSION_SECRET}
+  expiration: 3600  # 1 hour
+  inactivity: 300  # 5 minutes
+  domain: ${DOMAIN}  # Set this to your domain
+
+regulation:
+  max_retries: 3
+  find_time: 120
+  ban_time: 300
+
+storage:
+  local:
+    path: /config/db.sqlite3
+    encryption_key: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
+
+notifier:
+  filesystem:
+    filename: /config/notification.txt

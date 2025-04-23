@@ -1,0 +1,9 @@
+---
+# User credentials are supplied from environment variables
+users:
+  user:
+    displayname: "Example User"
+    password: "${AUTHELIA_USER_PASSWORD_HASH}"
+    email: "${AUTHELIA_USER_EMAIL}"
+    groups:
+      - admins
