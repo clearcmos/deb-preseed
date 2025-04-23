@@ -2,4 +2,5 @@
 *.iso
 *.qcow2
 .*
+base.log
 hosts/misc/docker-compose/traefik/acme.json

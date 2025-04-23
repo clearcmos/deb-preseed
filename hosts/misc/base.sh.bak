@@ -328,11 +328,8 @@ EOF
     
     # Parse the environment variable format
     if [[ "$line" == *"="* ]]; then
-      # Remove export keyword if present
-      cleaned_line="${line#export }"
-      
-      key="${cleaned_line%%=*}"
-      value="${cleaned_line#*=}"
+      key="${line%%=*}"
+      value="${line#*=}"
       key=$(echo "$key" | xargs)  # Trim whitespace
       value=$(echo "$value" | xargs)  # Trim whitespace
       env_vars["$key"]="$value"

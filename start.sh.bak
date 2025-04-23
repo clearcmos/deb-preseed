@@ -12,4 +12,4 @@ fi
 source /etc/profile
 
 # Run the commands
-1p && ./hosts/$HOSTNAME/base.sh && cd hosts/$HOSTNAME/docker-compose && sudo docker-compose --env-file /etc/secrets/.docker up -d && cd ~
+1p && ./hosts/$HOSTNAME/base.sh && cd hosts/$HOSTNAME/docker-compose && up && cd ~
