@@ -244,3 +244,10 @@ info "ISO file saved in current directory: $NEW_ISO"
 
 # Cleanup
 rm -rf "$WORK"
+
+# Move ISO if ISO_MOVE is defined
+if [[ -n "${ISO_MOVE:-}" ]]; then
+  info "Moving ISO using configured command..."
+  eval "$ISO_MOVE"
+  success "ISO moved successfully using custom command"
+fi
