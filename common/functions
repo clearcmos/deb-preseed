@@ -427,14 +427,12 @@ pushseed() {
     echo "GITHUB_TOKEN variable not found or empty in $token_file"
     return 1
   fi
-  local token="$GITHUB_TOKEN"
   
-  # Set remote URL with token authentication
-  local repo_url="https://${token}@github.com/${repo_name}.git"
+  # Set remote URL without embedding token
+  local repo_url="https://github.com/${repo_name}.git"
   
   # Configure git if needed
   local current_remote=$(git config --get remote.origin.url 2>/dev/null)
-  # We don't compare URLs directly as they might contain the token
   if [ -z "$current_remote" ] || ! echo "$current_remote" | grep -q "$repo_name"; then
     echo "Configuring git remote..."
     git remote remove origin 2>/dev/null
@@ -456,11 +454,21 @@ pushseed() {
   git add .
   git commit -m "update"
   
-  # Configure Git to not show credentials in error messages
-  git config --local credential.helper ""
+  # Setup credential helper to use the token
+  git config --local credential.helper store
+  
+  # Store GitHub credentials temporarily for this push
+  echo "https://oauth2:${GITHUB_TOKEN}@github.com" > ~/.git-credentials
+  chmod 600 ~/.git-credentials
   
   # Push changes
   git push origin $branch
+  
+  # Remove credentials file after use
+  rm -f ~/.git-credentials
+  
+  # Unset credential helper
+  git config --local --unset credential.helper
   
   echo "Done! Changes have been pushed to $branch."
 }
