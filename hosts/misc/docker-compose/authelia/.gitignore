@@ -1,0 +1,6 @@
+# Ignore the actual .env file with secrets
+.env
+
+# Ignore database and other generated files
+config/db.sqlite3
+config/notification.txt

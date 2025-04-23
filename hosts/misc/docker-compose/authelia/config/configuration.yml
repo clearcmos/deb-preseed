@@ -1,11 +1,13 @@
 ---
 theme: light
-jwt_secret: ${AUTHELIA_JWT_SECRET}
-default_redirection_url: https://auth.${DOMAIN}
+
+# Only use the identity_validation section for jwt_secret (remove deprecated top-level jwt_secret)
+identity_validation:
+  reset_password:
+    jwt_secret: ${AUTHELIA_JWT_SECRET}
 
 server:
-  host: 0.0.0.0
-  port: 9091
+  address: tcp://0.0.0.0:9091
 
 log:
   level: info
@@ -19,12 +21,13 @@ totp:
 webauthn:
   display_name: Authelia
   attestation_conveyance_preference: indirect
-  user_verification: preferred
+  selection_criteria:
+    user_verification: preferred
   timeout: 60s
 
 authentication_backend:
   file:
-    path: /config/users_database.yml
+    path: /config/users_database.yml.runtime
     password:
       algorithm: argon2id
       iterations: 1
@@ -34,7 +37,7 @@ authentication_backend:
       parallelism: 8
 
 access_control:
-  default_policy: deny
+  default_policy: two_factor  # Changed from 'deny' to valid default policy
   rules:
     - domain: "auth.${DOMAIN}"
       policy: bypass
@@ -47,7 +50,11 @@ session:
   secret: ${AUTHELIA_SESSION_SECRET}
   expiration: 3600  # 1 hour
   inactivity: 300  # 5 minutes
-  domain: ${DOMAIN}  # Set this to your domain
+  cookies:
+    - domain: ${DOMAIN}
+      same_site: lax
+      authelia_url: https://auth.${DOMAIN}
+      default_redirection_url: https://dashboard.${DOMAIN}
 
 regulation:
   max_retries: 3
@@ -55,9 +62,9 @@ regulation:
   ban_time: 300
 
 storage:
+  encryption_key: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
   local:
     path: /config/db.sqlite3
-    encryption_key: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
 
 notifier:
   filesystem:

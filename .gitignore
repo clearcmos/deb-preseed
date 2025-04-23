@@ -1,8 +1,8 @@
-!.gitignore
-*.iso
-*.qcow2
 .*
-base.log
-hosts/misc/docker-compose/traefik/acme.json
+!.gitignore
+**/*.runtime
 **/*.sqlite3
 **/notification.txt
+*.iso
+base.log
+hosts/misc/docker-compose/traefik/acme.json
