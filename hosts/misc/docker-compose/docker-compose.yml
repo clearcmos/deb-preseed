@@ -17,6 +17,12 @@ services:
     depends_on:
       - traefik
       - authelia
+  jellyfin:
+    extends:
+      file: ./external-services/docker-compose.yml
+      service: jellyfin-external
+    depends_on:
+      - traefik
   dashboard:
     image: traefik/whoami
     labels:

@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  jellyfin-external:
+    image: traefik/whoami  # Minimal image, not actually used
+    container_name: jellyfin-external
+    restart: "no"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${DOMAIN}`)"
+      - "traefik.http.routers.jellyfin.entrypoints=websecure"
+      - "traefik.http.routers.jellyfin.tls=true" 
+      - "traefik.http.routers.jellyfin.tls.certresolver=le"
+      - "traefik.http.services.jellyfin.loadbalancer.servers.0.url=http://192.168.1.10:8096"
+    networks:
+      - default
+
+networks:
+  default:
+    name: proxy
+    external: true
