@@ -116,7 +116,7 @@ def create_dns_cname_record(name):
         logger.error(f"Status code: {response.status_code}")
         logger.error(f"Response: {response.text}")
 
-def verify_dns_propagation(name, max_retries=10, retry_delay=5):
+def verify_dns_propagation(name, max_retries=20, retry_delay=10):
     """Verify DNS propagation by checking the record multiple times"""
     full_name = f"{name}.{DOMAIN}"
     logger.info(f"Verifying DNS propagation for: {full_name}")
@@ -170,10 +170,15 @@ def main():
     # Verify DNS propagation for newly created or updated records
     if created_records:
         logger.info(f"Waiting for DNS propagation for {len(created_records)} records...")
-        time.sleep(10)  # Initial wait for DNS changes to start propagating
+        time.sleep(30)  # Longer initial wait for DNS changes to start propagating
         
+        # Verify all subdomains are propagated
         for subdomain in created_records:
             verify_dns_propagation(subdomain)
+        
+        # Final wait to ensure DNS is fully propagated before Traefik tries ACME verification
+        logger.info("DNS records created and verified. Waiting 60 more seconds for full propagation...")
+        time.sleep(60)
     
     logger.info("DNS setup completed")
 

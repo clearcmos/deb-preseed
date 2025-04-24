@@ -1,3 +1,6 @@
+> [!NOTE]
+> The code in this repo has been created with the help of AI. Use at your own risk.
+
 # Debian Preseed and Docker Infrastructure
 
 This repository provides an end-to-end solution for automating Debian installations and deploying a containerized infrastructure stack. It combines a customized Debian installer with Docker Compose services for web hosting, authentication, monitoring, and media services.

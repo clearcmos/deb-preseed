@@ -6,6 +6,11 @@ log:
 entryPoints:
   web:
     address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
   websecure:
     address: ":443"
 
@@ -21,3 +26,9 @@ certificatesResolvers:
       storage: /letsencrypt/acme.json
       httpChallenge:
         entryPoint: web
+
+# Default TLS options
+# tls:
+#   options:
+#     default:
+#       minVersion: VersionTLS12
