@@ -9,4 +9,4 @@ alias mine='sudo chown -R '"$(whoami)"':'"$(whoami)"
 alias refresh='sudo source /etc/profile'
 alias up-d='sudo docker-compose --env-file /etc/secrets/.docker up -d'
 alias up='sudo docker-compose --env-file /etc/secrets/.docker up'
-alias upstaging='sudo docker-compose --env-file /etc/secrets/.docker up --traefik.certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory'
+alias upstaging='sudo docker-compose --env-file /etc/secrets/.docker -f docker-compose.yml -f docker-compose.staging.yml up'
