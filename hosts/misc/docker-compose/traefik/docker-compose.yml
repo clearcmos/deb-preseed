@@ -13,6 +13,16 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./acme.json:/letsencrypt/acme.json
-    # Remove the direct variable reference
+    # Command with detailed configuration for production certificates
     command:
+      - "--log.level=INFO"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # ACME configuration for production
       - "--certificatesResolvers.le.acme.email=${ACME_EMAIL}"
+      - "--certificatesResolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesResolvers.le.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+      - "--certificatesResolvers.le.acme.httpchallenge=true"
+      - "--certificatesResolvers.le.acme.httpchallenge.entrypoint=web"

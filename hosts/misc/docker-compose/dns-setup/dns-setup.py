@@ -116,6 +116,28 @@ def create_dns_cname_record(name):
         logger.error(f"Status code: {response.status_code}")
         logger.error(f"Response: {response.text}")
 
+def verify_dns_propagation(name, max_retries=10, retry_delay=5):
+    """Verify DNS propagation by checking the record multiple times"""
+    full_name = f"{name}.{DOMAIN}"
+    logger.info(f"Verifying DNS propagation for: {full_name}")
+    
+    for attempt in range(1, max_retries + 1):
+        response = requests.get(API_ENDPOINT, headers=headers, params={"name": full_name})
+        if response.status_code == 200:
+            data = response.json()
+            records = data["result"]
+            if len(records) > 0:
+                logger.info(f"DNS record '{full_name}' verified (attempt {attempt}/{max_retries})")
+                return True
+        
+        logger.warning(f"DNS record '{full_name}' not yet propagated (attempt {attempt}/{max_retries})")
+        if attempt < max_retries:
+            logger.info(f"Waiting {retry_delay} seconds before next check...")
+            time.sleep(retry_delay)
+    
+    logger.error(f"DNS propagation verification failed for '{full_name}' after {max_retries} attempts")
+    return False
+
 def main():
     """Main function to check and create DNS records"""
     logger.info("Starting DNS setup script")
@@ -128,13 +150,30 @@ def main():
     logger.info(f"Working with domain: {DOMAIN}")
     
     # Process each subdomain
+    created_records = []
     for var_name in SUBDOMAIN_VARS:
         subdomain = os.environ.get(var_name)
         if subdomain:
             logger.info(f"Processing {var_name}={subdomain}")
-            create_dns_cname_record(subdomain)
+            record_check = check_dns_record_exists(subdomain)
+            if not record_check["exists"]:
+                create_dns_cname_record(subdomain)
+                created_records.append(subdomain)
+            elif record_check.get("needs_update", False):
+                update_dns_record(record_check["record_id"], subdomain)
+                created_records.append(subdomain)
+            else:
+                logger.info(f"Skipping creation for '{subdomain}.{DOMAIN}' as it already exists and is not proxied")
         else:
             logger.warning(f"Environment variable {var_name} not found")
+    
+    # Verify DNS propagation for newly created or updated records
+    if created_records:
+        logger.info(f"Waiting for DNS propagation for {len(created_records)} records...")
+        time.sleep(10)  # Initial wait for DNS changes to start propagating
+        
+        for subdomain in created_records:
+            verify_dns_propagation(subdomain)
     
     logger.info("DNS setup completed")
 

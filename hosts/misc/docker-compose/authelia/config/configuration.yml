@@ -44,6 +44,9 @@ access_control:
     # Add rules for each domain you want to protect
     - domain: "${GLANCES_SUBDOMAIN}.${DOMAIN}"
       policy: two_factor
+    # Exclude Jellyfin from authentication
+    - domain: "${JELLYFIN_SUBDOMAIN}.${DOMAIN}"
+      policy: bypass
 
 session:
   name: authelia_session
