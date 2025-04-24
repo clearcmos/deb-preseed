@@ -27,7 +27,7 @@ services:
     image: traefik/whoami
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`dashboard.${DOMAIN}`)"
+      - "traefik.http.routers.dashboard.rule=Host(`${DASHBOARD_SUBDOMAIN}.${DOMAIN}`)"
       - "traefik.http.routers.dashboard.entrypoints=websecure"
       - "traefik.http.routers.dashboard.tls=true"
       - "traefik.http.routers.dashboard.tls.certresolver=le"

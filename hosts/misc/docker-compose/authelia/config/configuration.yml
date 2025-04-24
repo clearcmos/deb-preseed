@@ -39,10 +39,10 @@ authentication_backend:
 access_control:
   default_policy: two_factor  # Changed from 'deny' to valid default policy
   rules:
-    - domain: "authelia.${DOMAIN}"
+    - domain: "${AUTHELIA_SUBDOMAIN}.${DOMAIN}"
       policy: bypass
     # Add rules for each domain you want to protect
-    - domain: "sys.${DOMAIN}"
+    - domain: "${GLANCES_SUBDOMAIN}.${DOMAIN}"
       policy: two_factor
 
 session:
@@ -53,8 +53,8 @@ session:
   cookies:
     - domain: ${DOMAIN}
       same_site: lax
-      authelia_url: https://authelia.${DOMAIN}
-      default_redirection_url: https://out.${DOMAIN}
+      authelia_url: https://${AUTHELIA_SUBDOMAIN}.${DOMAIN}
+      default_redirection_url: https://${DASHBOARD_SUBDOMAIN}.${DOMAIN}
 
 regulation:
   max_retries: 3

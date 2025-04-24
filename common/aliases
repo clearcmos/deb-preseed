@@ -1,4 +1,5 @@
 alias compress='dir=$(basename "$(pwd)"); tar -czf "${dir}.tar.gz" ./*'
+alias dc='cd /home/'"$(whoami)"'/deb-preseed/hosts/'"$(hostname)"'/docker-compose'
 alias deploy='/home/'"$(whoami)"'/deb-preseed/start.sh'
 alias down='sudo docker-compose --env-file /etc/secrets/.docker down'
 alias gen='openssl rand -base64 45'
@@ -6,4 +7,6 @@ alias inquire='apt list --upgradable'
 alias ls='ls -lh --color=auto --group-directories-first'
 alias mine='sudo chown -R '"$(whoami)"':'"$(whoami)"
 alias refresh='sudo source /etc/profile'
-alias up='sudo docker-compose --env-file /etc/secrets/.docker up -d'
+alias up-d='sudo docker-compose --env-file /etc/secrets/.docker up -d'
+alias up='sudo docker-compose --env-file /etc/secrets/.docker up'
+alias upstaging='sudo docker-compose --env-file /etc/secrets/.docker up --traefik.certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory'
