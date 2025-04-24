@@ -1,6 +1,5 @@
 version: '3.8'
 services:
   traefik:
-    command:
-      - "--certificatesResolvers.le.acme.email=${ACME_EMAIL}"
-      - "--certificatesResolvers.le.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory"
+    volumes:
+      - ./traefik/traefik.staging.yml:/etc/traefik/traefik.yml:ro
