@@ -1,5 +1,5 @@
 # traefik-proxy/traefik/traefik.staging.yml
-# Same as traefik.yml but with staging CA server
+# Staging version with Let's Encrypt staging server
 
 log:
   level: INFO
@@ -15,11 +15,4 @@ providers:
     endpoint: "unix:///var/run/docker.sock"
     exposedByDefault: false
 
-certificatesResolvers:
-  le:
-    acme:
-      # Using staging server
-      caServer: https://acme-staging-v02.api.letsencrypt.org/directory
-      storage: /letsencrypt/acme.json
-      httpChallenge:
-        entryPoint: web
+# No certificate resolver defined in file - command line only

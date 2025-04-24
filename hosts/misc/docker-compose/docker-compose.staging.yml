@@ -1,5 +1,0 @@
-version: '3.8'
-services:
-  traefik:
-    volumes:
-      - ./traefik/traefik.staging.yml:/etc/traefik/traefik.yml:ro

@@ -1,9 +1,16 @@
 version: '3.8'
 services:
+  dns-setup:
+    extends:
+      file: ./dns-setup/docker-compose.yml
+      service: dns-setup
+
   traefik:
     extends:
       file: ./traefik/docker-compose.yml
       service: traefik
+    depends_on:
+      - dns-setup
   authelia:
     extends:
       file: ./authelia/docker-compose.yml

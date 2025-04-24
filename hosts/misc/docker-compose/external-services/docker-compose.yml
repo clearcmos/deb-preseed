@@ -10,7 +10,7 @@ services:
       - "traefik.http.routers.jellyfin.entrypoints=websecure"
       - "traefik.http.routers.jellyfin.tls=true" 
       - "traefik.http.routers.jellyfin.tls.certresolver=le"
-      - "traefik.http.services.jellyfin.loadbalancer.servers.0.url=http://192.168.1.10:8096"
+      - "traefik.http.services.jellyfin.loadbalancer.server.url=http://192.168.1.10:8096"
     networks:
       - default
 
