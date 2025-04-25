@@ -197,26 +197,10 @@ test_configuration() {
     fi
 }
 
-# Create a log rotation configuration for unattended-upgrades logs
+# Placeholder function to maintain script flow
 configure_logs() {
-    print_status "${YELLOW}" "Setting up log rotation for unattended-upgrades..."
-    
-    # Ensure the log directory exists
-    mkdir -p /var/log/unattended-upgrades
-    
-    # Create/update logrotate configuration
-    cat > /etc/logrotate.d/unattended-upgrades << EOF
-/var/log/unattended-upgrades/unattended-upgrades.log
-/var/log/unattended-upgrades/unattended-upgrades-shutdown.log
-{
-    rotate 6
-    monthly
-    compress
-    missingok
-    notifempty
-}
-EOF
-    print_status "${GREEN}" "✓ Log rotation for unattended-upgrades configured."
+    print_status "${YELLOW}" "Skipping log rotation configuration..."
+    print_status "${GREEN}" "✓ No log configuration needed."
 }
 
     # Verify the entire setup
@@ -285,9 +269,6 @@ verify_setup() {
     echo ""
     echo "Next scheduled unattended-upgrades tasks:"
     grep -r "unattended" /var/spool/anacron/ /var/spool/cron/crontabs/ /etc/cron.* 2>/dev/null || echo "No explicit cron entries found (handled by APT::Periodic)"
-    echo ""
-    echo "Recent update activities:"
-    find /var/lib/apt/periodic/ -type f -name "update-success-stamp" -o -name "upgrade-stamp" | xargs ls -la 2>/dev/null || echo "No recent update stamps found"
     echo ""
     
     print_status "${GREEN}" "Configuration verification complete."

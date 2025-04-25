@@ -27,7 +27,7 @@ fi
 # Get hostname for dynamic backup
 HOST=$(hostname)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOST_DIR="$(realpath "$SCRIPT_DIR/../../hosts/$HOST")"
+HOST_DIR="$(realpath "$SCRIPT_DIR/../hosts/$HOST")"
 
 # Configuration
 BACKUP_DIR="$BACKUP_MOUNT"

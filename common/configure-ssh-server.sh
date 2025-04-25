@@ -2,13 +2,8 @@
 
 source /etc/profile
 
-# Setup logging
-LOG_FILE="ssh-server.log"
+# Log level setting
 LOG_LEVEL="INFO" # Set to DEBUG for more detailed logging
-
-# Make sure we can log right away
-touch "$LOG_FILE"
-chmod 644 "$LOG_FILE"
 
 # Color formatting helpers
 blue() {
@@ -37,10 +32,12 @@ magenta() {
 
 # Logging functions
 log_debug() {
-  # Only write debug logs to file, not to console
-  local timestamp
-  timestamp=$(date "+%Y-%m-%d %H:%M:%S")
-  echo "$timestamp - DEBUG - $1" >> "$LOG_FILE"
+  # Only log debug messages if LOG_LEVEL is DEBUG
+  if [[ "$LOG_LEVEL" == "DEBUG" ]]; then
+    local timestamp
+    timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    echo "$timestamp - DEBUG - $1"
+  fi
 }
 
 log_info() {
@@ -53,9 +50,6 @@ log_info() {
   else
     echo "$1"
   fi
-  
-  # Always log full timestamp to file
-  echo "$timestamp - INFO - $1" >> "$LOG_FILE"
 }
 
 log_warning() {
@@ -67,8 +61,6 @@ log_warning() {
   else
     echo "$1"
   fi
-  
-  echo "$timestamp - WARNING - $1" >> "$LOG_FILE"
 }
 
 log_error() {
@@ -80,8 +72,6 @@ log_error() {
   else
     echo "$1"
   fi
-  
-  echo "$timestamp - ERROR - $1" >> "$LOG_FILE"
 }
 
 # Global variables
@@ -273,11 +263,9 @@ finalize_script() {
   
   if [[ "$ERROR_FLAG" == "true" ]]; then
     log_error "$(red "ERROR: There were errors during script execution.")" "color"
-    log_error "Please check the log file at $LOG_FILE for details."
     exit 1
   else
     log_info "$(green "SUCCESS: Script completed without errors.")" "color"
-    log_info "Log file is available at $LOG_FILE"
     log_info ""
     log_info "$(blue "SSH has been configured with the following settings:")" "color"
     
@@ -286,8 +274,10 @@ finalize_script() {
     log_info "- Root login is enabled"
     log_info "- Password authentication is disabled"
     
-    log_info "You can now connect to this server using: $(green "ssh ${CURRENT_NON_ROOT_USER}@hostname")" "color" 
-    log_info "Or connect as root: $(green "ssh root@hostname")" "color"
+    # Get the actual hostname
+    local actual_hostname=$(hostname)
+    log_info "You can now connect to this server using: $(green "ssh ${CURRENT_NON_ROOT_USER}@${actual_hostname}")" "color" 
+    log_info "Or connect as root: $(green "ssh root@${actual_hostname}")" "color"
     
     exit 0
   fi
