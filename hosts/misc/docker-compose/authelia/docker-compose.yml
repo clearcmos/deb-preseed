@@ -10,7 +10,7 @@ services:
       - ./entrypoint.sh:/entrypoint.sh
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
-      - TZ=UTC
+      - TZ=America/Toronto
       - DOMAIN=${DOMAIN}
       - AUTHELIA_JWT_SECRET=${AUTHELIA_JWT_SECRET}
       - AUTHELIA_SESSION_SECRET=${AUTHELIA_SESSION_SECRET}

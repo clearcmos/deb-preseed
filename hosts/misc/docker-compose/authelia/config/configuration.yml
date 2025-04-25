@@ -12,6 +12,10 @@ server:
 log:
   level: info
 
+ntp:
+  disable_startup_check: true
+  disable_failure: true
+
 totp:
   issuer: Authelia
   period: 30
@@ -41,7 +45,12 @@ access_control:
   rules:
     - domain: "${AUTHELIA_SUBDOMAIN}.${DOMAIN}"
       policy: bypass
-    # Add rules for each domain you want to protect
+    # Glances monitoring - bypass auth for local network
+    - domain: "${GLANCES_SUBDOMAIN}.${DOMAIN}"
+      policy: bypass
+      networks:
+        - 192.168.1.0/24
+    # Default Glances policy for other networks
     - domain: "${GLANCES_SUBDOMAIN}.${DOMAIN}"
       policy: two_factor
     # Exclude Jellyfin from authentication
