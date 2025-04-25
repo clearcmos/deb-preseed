@@ -220,51 +220,6 @@ detect_non_root_user() {
   fi
 }
 
-# Configure SSH server
-configure_ssh() {
-  log_info "Configuring SSH server..."
-  log_debug "Starting SSH server configuration process"
-  
-  # Backup original config if not already backed up
-  if [[ ! -f "/etc/ssh/sshd_config.bak" ]]; then
-    if cp "/etc/ssh/sshd_config" "/etc/ssh/sshd_config.bak"; then
-      log_info "Original sshd_config backed up to /etc/ssh/sshd_config.bak"
-      log_debug "Backup created successfully at $(date "+%Y-%m-%d %H:%M:%S")"
-    else
-      log_error "Failed to create backup of sshd_config: $?"
-      log_debug "Backup error details: $?"
-    fi
-  else
-    log_debug "Backup file already exists, skipping backup creation"
-  fi
-  
-  # Write standard SSH configuration
-  log_info "Writing SSH configuration..."
-  cat > "/etc/ssh/sshd_config" << EOF
-Include /etc/ssh/sshd_config.d/*.conf
-Port 22
-Protocol 2
-PermitRootLogin yes
-PasswordAuthentication no
-PubkeyAuthentication yes
-MaxAuthTries 3
-LoginGraceTime 30
-X11Forwarding no
-ClientAliveInterval 300
-ClientAliveCountMax 2
-AllowUsers $CURRENT_NON_ROOT_USER root
-
-# Restrict SSH access to LAN IPs
-Match Address 192.168.1.0/24
-  PermitRootLogin yes
-  PubkeyAuthentication yes
-
-Match Address *,!192.168.1.0/24
-  DenyUsers *
-EOF
-  
-  log_info "SSH configuration updated."
-}
 
 # Configure and mount SMB/CIFS shares
 discover_smb_shares() {
@@ -501,76 +456,6 @@ EOF
   # Note: Function will exit soon, clearing local variables automatically
 }
 
-# Setup automatic security updates
-setup_security_updates() {
-  log_info "Setting up automatic security updates..."
-  
-  # Configure unattended-upgrades
-  log_info "Configuring unattended-upgrades..."
-  
-  # Write auto-upgrades configuration
-  cat > "/etc/apt/apt.conf.d/20auto-upgrades" << 'EOF'
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::AutocleanInterval "7";
-APT::Periodic::Download-Upgradeable-Packages "1";
-EOF
-  
-  # Check if 50unattended-upgrades exists and modify it
-  if [[ -f "/etc/apt/apt.conf.d/50unattended-upgrades" ]]; then
-    # Read the file content
-    local config_content
-    config_content=$(cat "/etc/apt/apt.conf.d/50unattended-upgrades")
-    
-    # Enable security updates if not already enabled
-    if ! grep -q '^\s*"origin=Debian,codename=\${distro_codename},label=Debian-Security";' "/etc/apt/apt.conf.d/50unattended-upgrades"; then
-      log_info "Enabling automatic security updates..."
-      # Replace commented security updates line with uncommented version
-      config_content=$(echo "$config_content" | sed 's|//\s*"origin=Debian,codename=\${distro_codename},label=Debian-Security";|"origin=Debian,codename=${distro_codename},label=Debian-Security";|')
-    else
-      log_info "Automatic security updates already enabled."
-    fi
-    
-    # Configure automatic reboot
-    if ! grep -q "Unattended-Upgrade::Automatic-Reboot" "/etc/apt/apt.conf.d/50unattended-upgrades"; then
-      log_info "Configuring to prevent automatic reboots after updates..."
-      config_content="${config_content}"$'\n'"Unattended-Upgrade::Automatic-Reboot \"false\";"$'\n'
-    else
-      # Replace existing setting with "false"
-      config_content=$(echo "$config_content" | sed 's|Unattended-Upgrade::Automatic-Reboot "true";|Unattended-Upgrade::Automatic-Reboot "false";|')
-    fi
-    
-    # Write modified configuration
-    echo "$config_content" > "/etc/apt/apt.conf.d/50unattended-upgrades"
-  else
-    # Create full configuration file if it doesn't exist
-    log_info "Creating full unattended-upgrades configuration..."
-    cat > "/etc/apt/apt.conf.d/50unattended-upgrades" << 'EOF'
-Unattended-Upgrade::Allowed-Origins {
-    "origin=Debian,codename=${distro_codename},label=Debian-Security";
-};
-
-Unattended-Upgrade::Package-Blacklist {
-};
-
-Unattended-Upgrade::AutoFixInterruptedDpkg "true";
-Unattended-Upgrade::MinimalSteps "true";
-Unattended-Upgrade::InstallOnShutdown "false";
-Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
-Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
-Unattended-Upgrade::Automatic-Reboot "false";
-EOF
-  fi
-  
-  # Enable and restart service
-  log_info "Enabling unattended-upgrades service..."
-  parse_output $(run_command "systemctl enable unattended-upgrades" "true")
-  parse_output $(run_command "systemctl restart unattended-upgrades" "true")
-  log_info "Automatic updates configuration completed."
-}
-
-
 # Final steps and summary
 finalize_script() {
   log_info "----------------------------------------"
@@ -584,16 +469,6 @@ finalize_script() {
     log_info "$(green "SUCCESS: Script completed without errors.")" "color"
     log_info "Log file is available at $LOG_FILE"
     log_info ""
-    log_info "$(blue "SSH has been configured with the following settings:")" "color"
-    
-    log_info "- SSH access is restricted to user: $(cyan "$CURRENT_NON_ROOT_USER and root")" "color"
-    log_info "- Access is restricted to LAN IPs (192.168.1.0/24 network)"
-    log_info "- Root login is enabled"
-    log_info "- Password authentication is disabled"
-    
-    log_info "You can now connect to this server using: $(green "ssh ${CURRENT_NON_ROOT_USER}@hostname")" "color" 
-    log_info "Or connect as root: $(green "ssh root@hostname")" "color"
-    
     log_info ""
     
     # Create automount service for network shares
@@ -670,14 +545,8 @@ main() {
   log_info "Running as root user: $(id -un)"
   log_info "Detected non-root user: $CURRENT_NON_ROOT_USER"
 
-  # Configure SSH server
-  configure_ssh
-  
   # Discover and mount SMB/CIFS shares
   discover_smb_shares
-  
-  # Setup automatic security updates
-  setup_security_updates
   
   # Finish up
   finalize_script
