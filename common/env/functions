@@ -417,10 +417,20 @@ goto() {
 }
 
 n() {
+    local selected_file
+    
     if [ -z "$1" ]; then
-        nano $(fzf)
+        selected_file=$(fzf)
     else
-        (cd "$1" && nano $(fzf))
+        selected_file=$(cd "$1" && fzf)
+    fi
+    
+    if [ -n "$selected_file" ]; then
+        if [ -w "$selected_file" ] || [ ! -e "$selected_file" ]; then
+            nano "$selected_file"
+        else
+            sudo nano "$selected_file"
+        fi
     fi
 }
 
