@@ -12,17 +12,6 @@ fi
 
 source /etc/profile
 
-# Run the initial setup commands
-sudo mkdir -p /usr/local/lib/shared-npm && \
-sudo chown -R $USER:$USER /usr/local/lib/shared-npm && \
-npm config set prefix '/usr/local/lib/shared-npm' && \
-npm install -g @anthropic-ai/claude-code && \
-echo 'export PATH=/usr/local/lib/shared-npm/bin:$PATH' | sudo tee /etc/profile.d/shared-npm.sh && \
-sudo chmod +x /etc/profile.d/shared-npm.sh && \
-echo 'export PATH=/usr/local/lib/shared-npm/bin:$PATH' >> ~/.profile && \
-
-source ~/.profile && \
-
 # Run 1p and auto-respond "y" to the prompt
 1p
 
@@ -31,12 +20,12 @@ if [ -d "/etc/secrets" ]; then
     # Ensure proper ownership and permissions for /etc/secrets directory
     sudo chown root:secrets /etc/secrets
     sudo chmod 750 /etc/secrets
-    
+
     # Fix permissions for all files inside
     echo "Ensuring proper permissions on secret files..."
     sudo chown -R root:secrets /etc/secrets
     sudo find /etc/secrets -type f -exec sudo chmod 640 {} \;
-    
+
     # Make sure the user is in the secrets group and the group is active
     if id -nG | grep -qw secrets; then
         # User is in secrets group, but it might not be active in current session
