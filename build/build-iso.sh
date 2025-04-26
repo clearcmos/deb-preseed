@@ -45,7 +45,7 @@ if [[ ${#missing_packages[@]} -gt 0 ]]; then
 fi
 
 # Check if preseed.cfg exists in the root directory
-PRESEED_PATH="common/preseed.cfg"
+PRESEED_PATH="preseed.cfg"
 if [[ ! -f "$PRESEED_PATH" ]]; then
   error "preseed.cfg not found in the common directory"
 fi
@@ -53,7 +53,7 @@ fi
 info "Using preseed template: $PRESEED_PATH"
 
 # List available hosts and select one
-HOST_DIR="hosts"
+HOST_DIR="../hosts"
 if [[ ! -d "$HOST_DIR" ]]; then
   error "Host directory not found: $HOST_DIR"
 fi
@@ -128,7 +128,10 @@ ROOT_PASSWORD=
 USER_FULLNAME="Debian User"
 USERNAME=
 USER_PASSWORD=
-SSH_AUTHORIZED_KEY=
+SSH_AUTHORIZED_KEY_1=
+SSH_AUTHORIZED_KEY_2=
+SSH_AUTHORIZED_KEY_3=
+SSH_AUTHORIZED_KEY_4=
 ISO_MOVE=
 EOF
   chown "$ORIGINAL_USER:$ORIGINAL_USER" "$ENV_FILE"
@@ -144,7 +147,10 @@ done
 info "Environment loaded:"
 info "  USERNAME=$USERNAME"
 info "  USER_FULLNAME=$USER_FULLNAME"
-info "  SSH_KEY: $( [[ -n "$SSH_AUTHORIZED_KEY" ]] && echo "present" || echo "none" )"
+info "  SSH_KEY_1: $( [[ -n "$SSH_AUTHORIZED_KEY_1" ]] && echo "present" || echo "none" )"
+info "  SSH_KEY_2: $( [[ -n "$SSH_AUTHORIZED_KEY_2" ]] && echo "present" || echo "none" )"
+info "  SSH_KEY_3: $( [[ -n "$SSH_AUTHORIZED_KEY_3" ]] && echo "present" || echo "none" )"
+info "  SSH_KEY_4: $( [[ -n "$SSH_AUTHORIZED_KEY_4" ]] && echo "present" || echo "none" )"
 
 
 # Download Debian ISO if needed
@@ -174,7 +180,10 @@ sed \
   -e "s|\${userfullname}|$(printf '%s' "$USER_FULLNAME" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${username}|$(printf '%s' "$USERNAME" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${userpassword}|$(printf '%s' "$USER_PASSWORD" | sed 's|[&]|\\&|g')|g" \
-  -e "s|\${ssh_authorized_key}|$(printf '%s' "$SSH_AUTHORIZED_KEY" | sed 's|[&]|\\&|g')|g" \
+  -e "s|\${ssh_authorized_key_1}|$(printf '%s' "$SSH_AUTHORIZED_KEY_1" | sed 's|[&]|\\&|g')|g" \
+  -e "s|\${ssh_authorized_key_2}|$(printf '%s' "$SSH_AUTHORIZED_KEY_2" | sed 's|[&]|\\&|g')|g" \
+  -e "s|\${ssh_authorized_key_3}|$(printf '%s' "$SSH_AUTHORIZED_KEY_3" | sed 's|[&]|\\&|g')|g" \
+  -e "s|\${ssh_authorized_key_4}|$(printf '%s' "$SSH_AUTHORIZED_KEY_4" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${network_hostname}|$(printf '%s' "$NETWORK_HOSTNAME" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${network_domain}|$(printf '%s' "$NETWORK_DOMAIN" | sed 's|[&]|\\&|g')|g" \
   -e "s|\${network_ip}|$(printf '%s' "$NETWORK_IP" | sed 's|[&]|\\&|g')|g" \
