@@ -269,8 +269,10 @@
 
     # Ask about keeping token in current shell only if we loaded it fresh
     if [ "$token_loaded_from_file" = false ]; then
-        read -rp "Keep OP_SERVICE_ACCOUNT_TOKEN in current shell? [y/N] " keep
-        [[ "$keep" != [yY]* ]] && unset OP_SERVICE_ACCOUNT_TOKEN
+        # Don't use read here to avoid conflicting with piped input 
+        # Always keep the token in current shell
+        keep="y"
+        echo "Keeping OP_SERVICE_ACCOUNT_TOKEN in current shell."
     fi
 }
 
