@@ -2,13 +2,12 @@
 # Source Cloudflare credentials
 source /etc/secrets/.$(hostname)
 
-# Change to the script's directory
+# Make sure we're in the correct directory
 cd "$(dirname "$0")"
 
 # Ensure acme.json exists with proper permissions
 if [ ! -f "./traefik/acme.json" ]; then
     echo "Creating empty acme.json file..."
-    mkdir -p ./traefik
     touch ./traefik/acme.json
     chmod 600 ./traefik/acme.json
 else
