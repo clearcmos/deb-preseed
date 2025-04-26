@@ -3,7 +3,7 @@
 
 # Debian Preseed and Docker Infrastructure
 
-This repository provides an end-to-end solution for automating Debian installations and deploying a containerized infrastructure stack. It combines a customized Debian installer with Docker Compose services for web hosting, authentication, monitoring, and media services.
+This repository provides an end-to-end solution for automating Debian installations and deploying a containerized infrastructure stack. It combines a customized Debian installer with Docker Compose services for web hosting, authentication, monitoring, VPN, and media services.
 
 ## Table of Contents
 
@@ -17,6 +17,13 @@ This repository provides an end-to-end solution for automating Debian installati
   - [DNS Management](#dns-management)
   - [Monitoring (Glances)](#monitoring-glances)
   - [Media Server (Jellyfin)](#media-server-jellyfin)
+  - [VPN (WireGuard)](#vpn-wireguard)
+- [Security](#security)
+  - [Traffic Analysis](#traffic-analysis)
+  - [Security Scanning](#security-scanning)
+  - [Hardening](#hardening)
+- [Backup and Restore](#backup-and-restore)
+- [Documentation](#documentation)
 - [Getting Started](#getting-started)
   - [First-time Setup](#first-time-setup)
   - [Authentication Setup](#authentication-setup)
@@ -29,7 +36,7 @@ This repository provides an end-to-end solution for automating Debian installati
 This project provides two main components:
 
 1. **Automated Debian Installer**: Creates a custom Debian installation ISO with preconfigured settings for unattended installation.
-2. **Docker Infrastructure**: Sets up a complete containerized environment with authentication, reverse proxy, and various services.
+2. **Docker Infrastructure**: Sets up a complete containerized environment with authentication, reverse proxy, VPN, and various services.
 
 The system is designed to be modular, allowing you to easily add or remove services as needed, while maintaining security through a centralized authentication system.
 
@@ -47,11 +54,11 @@ To create a custom Debian installation ISO:
 
 2. Run the build script:
    ```bash
-   ./build-iso.sh
+   sudo ./build/build-iso.sh
    ```
 
 3. The script will:
-   - Install required dependencies
+   - Install required dependencies automatically
    - Prompt you to select a host configuration
    - Create necessary environment files if they don't exist
    - Modify the Debian installer to use your configuration
@@ -82,7 +89,7 @@ Two configuration files need to be set up:
    PACKAGES="apt-listchanges ca-certificates curl git openssh-server sudo ..."
    ```
 
-The script will create these files with templates if they don't exist.
+The script will create these files with templates if they don't exist and guide you through the setup process.
 
 ## Infrastructure Components
 
@@ -122,7 +129,7 @@ The DNS management system automatically configures Cloudflare DNS records:
   - Verification of DNS propagation
   - Non-proxied DNS records for optimal Let's Encrypt operation
 
-- **Configuration**: Environment variables in Docker Compose files
+- **Implementation**: Python script in `hosts/misc/docker-compose/dns-setup/dns-setup.py`
 
 - **Requirements**:
   - Cloudflare API token
@@ -149,7 +156,135 @@ Jellyfin provides media streaming capabilities:
   - User management
   - Streaming to various devices
 
-- **Access URL**: https://jellyfin.yourdomain.com (no authentication required by default)
+- **Access URL**: https://jellyfin.yourdomain.com
+
+### VPN (WireGuard)
+
+WireGuard provides secure remote access to your network:
+
+- **Features**:
+  - Modern, secure VPN protocol
+  - Easy peer configuration
+  - Web-based configuration and QR codes for mobile devices
+
+- **Configuration**: Located in `hosts/misc/docker-compose/wireguard/config/`
+
+## Security
+
+### Traffic Analysis
+
+The repository includes a web traffic analysis tool that helps identify and analyze suspicious traffic to your services:
+
+- **Script**: `common/analyze_web_traffic.py`
+
+- **Features**:
+  - Analyzes Traefik logs to detect suspicious activity
+  - Identifies potential attacks including SQL injection attempts, path traversal, etc.
+  - Provides geographic information about connecting IPs
+  - Generates detailed reports of connection attempts
+
+- **Usage**:
+  ```bash
+  cd ~/deb-preseed
+  python3 common/analyze_web_traffic.py
+  ```
+
+- **Requirements**:
+  - Docker (to access Traefik logs)
+  - geoip-bin package (for geolocation features)
+  - Python 3.x
+
+The analysis tool looks for various suspicious patterns including:
+- WordPress admin access attempts
+- Git repository access attempts
+- Environment file access
+- Admin panel access
+- SQL injection attempts
+- PHP code injection
+- XSS attempts
+
+### Security Scanning
+
+A utility script is provided to scan for sensitive information that might accidentally be committed to the repository:
+
+- **Script**: `utils/scan-sensitive-patterns.sh`
+
+- **Features**:
+  - Scans for sensitive patterns defined in `/etc/secrets/.ignore`
+  - Respects `.gitignore` exclusions
+  - Detailed output of matching files and lines
+
+- **Usage**:
+  ```bash
+  cd ~/deb-preseed
+  ./utils/scan-sensitive-patterns.sh [directory]
+  ```
+
+- **Configuration**:
+  Create a pattern file at `/etc/secrets/.ignore` containing regex patterns to search for:
+  ```
+  password=
+  api_key=
+  secret=
+  ```
+
+### Hardening
+
+The repository includes several scripts to harden your server:
+
+- **SSH Server Hardening** (`common/config/configure-ssh-server.sh`):
+  - Disables password authentication
+  - Enables key-based authentication only
+  - Disables root login
+  - Configures secure ciphers and algorithms
+
+- **Automatic Updates** (`common/config/configure-auto-updates.sh`):
+  - Configures unattended-upgrades for security updates
+  - Sets up email notifications for updates
+
+- **Environment Profiles**:
+  - Secure shell environments with `common/env/profile`
+  - Custom aliases and functions for secure operations
+
+## Backup and Restore
+
+The repository includes comprehensive backup and restore functionality:
+
+- **Backup Script** (`common/backup/backup-host.sh`):
+  - Creates full system backups
+  - Includes Docker volumes and configurations
+  - Encrypts backups for security
+  - Configurable retention policy
+
+- **Restore Script** (`common/backup/restore-host.sh`):
+  - Restores from previously created backups
+  - Verifies backup integrity
+  - Handles Docker volumes and configurations
+
+- **Documentation**: Detailed backup and restore instructions are available in `docs/backup-host.md`
+
+- **Usage**:
+  ```bash
+  # Create a backup
+  sudo ~/deb-preseed/common/backup/backup-host.sh
+  
+  # Restore from backup
+  sudo ~/deb-preseed/common/backup/restore-host.sh /path/to/backup.tar.gz
+  ```
+
+## Documentation
+
+The repository includes detailed documentation:
+
+- **Backup Instructions** (`docs/backup-host.md`):
+  - Detailed guide for backup and restore procedures
+  - Recovery scenarios
+  - Best practices for backup storage
+
+- **Command Cheatsheet** (`docs/cheatsheet.md`):
+  - Quick reference for common commands
+  - Troubleshooting steps
+  - Service management shortcuts
 
 ## Getting Started
 
@@ -163,6 +298,7 @@ Jellyfin provides media streaming capabilities:
 2. **Initial Configuration**:
    - Log in with the credentials you configured
    - The repository will be cloned to your home directory
+   - Claude Code will be automatically installed (through rc.local)
 
 3. **Start Docker Services**:
    ```bash
@@ -233,8 +369,11 @@ To add a new service to the infrastructure:
        - authelia
    ```
 
-4. **Add DNS entry**:
-   Add the service to the DNS setup by adding a new environment variable in the docker-compose environment.
+4. **Update services**:
+   ```bash
+   cd ~/deb-preseed/hosts/misc/docker-compose
+   ./upprod.sh
+   ```
 
 ## Post-Installation
 
@@ -242,11 +381,30 @@ After installation, you should:
 
 1. **Change default passwords**: Even though you've set initial passwords, change them after installation.
 
-2. **Update SSH configuration**: Review and harden SSH settings in `/etc/ssh/sshd_config`.
+2. **Update SSH configuration**: Review and harden SSH settings using the provided script:
+   ```bash
+   sudo ~/deb-preseed/common/config/configure-ssh-server.sh
+   ```
 
-3. **Configure backup**: Set up regular backups of your configuration data.
+3. **Configure automatic updates**: Enable automatic security updates:
+   ```bash
+   sudo ~/deb-preseed/common/config/configure-auto-updates.sh
+   ```
 
-4. **Update environment variables**: Make sure all services have the correct environment variables.
+4. **Set up backups**: Configure regular backups using the provided scripts:
+   ```bash
+   sudo ~/deb-preseed/common/backup/backup-host.sh
+   ```
+
+5. **Run security scans**: Check for sensitive information:
+   ```bash
+   ./utils/scan-sensitive-patterns.sh
+   ```
+
+6. **Analyze web traffic**: Monitor for suspicious activity:
+   ```bash
+   python3 common/analyze_web_traffic.py
+   ```
 
 ## Troubleshooting
 
@@ -305,4 +463,23 @@ If Let's Encrypt certificates aren't being issued:
 3. Check the acme.json file:
    ```bash
    cat ~/deb-preseed/hosts/misc/docker-compose/traefik/acme.json
+   ```
+
+### WireGuard VPN Issues
+
+If you're having trouble with WireGuard:
+
+1. Check WireGuard container logs:
+   ```bash
+   docker logs wireguard
+   ```
+
+2. Verify the configuration:
+   ```bash
+   cat ~/deb-preseed/hosts/misc/docker-compose/wireguard/config/wg_confs/wg0.conf
+   ```
+
+3. Generate a new peer configuration:
+   ```bash
+   docker exec -it wireguard /app/show-peer 2
    ```
