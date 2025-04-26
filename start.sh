@@ -12,9 +12,28 @@ fi
 
 source /etc/profile
 
-# Run the commands
+# Run the initial setup commands
 1p && \
 $SCRIPT_DIR/common/config/configure-auto-updates.sh && \
 $SCRIPT_DIR/common/config/configure-smb-shares.sh && \
-$SCRIPT_DIR/common/config/configure-ssh-server.sh && \
-$SCRIPT_DIR/hosts/$HOSTNAME/docker-compose/up.sh
+$SCRIPT_DIR/common/config/configure-ssh-server.sh
+
+# Ask if user wants to restore from backup
+read -p "Do you want to restore from a system backup? (y/n): " restore_choice
+if [[ "$restore_choice" =~ ^[Yy]$ ]]; then
+    echo "Running restore script..."
+    $SCRIPT_DIR/common/backup/restore-host.sh
+    
+    # After restore, ask if user wants to start containers
+    read -p "Do you want to start the containers now? (y/n): " start_choice
+    if [[ "$start_choice" =~ ^[Yy]$ ]]; then
+        echo "Starting containers..."
+        $SCRIPT_DIR/hosts/$HOSTNAME/docker-compose/up.sh
+    else
+        echo "Containers not started. You can start them later with: $SCRIPT_DIR/hosts/$HOSTNAME/docker-compose/up.sh"
+    fi
+else
+    # If no restore, continue with normal startup
+    echo "Starting containers..."
+    $SCRIPT_DIR/hosts/$HOSTNAME/docker-compose/up.sh
+fi
