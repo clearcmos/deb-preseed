@@ -372,7 +372,7 @@ To add a new service to the infrastructure:
 4. **Update services**:
    ```bash
    cd ~/deb-preseed/hosts/misc/docker-compose
-   ./upprod.sh
+   ./up.sh
    ```
 
 ## Post-Installation

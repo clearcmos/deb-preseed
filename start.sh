@@ -13,4 +13,9 @@ fi
 source /etc/profile
 
 # Run the commands
-1p && $SCRIPT_DIR/hosts/$HOSTNAME/base.sh && cd $SCRIPT_DIR/hosts/$HOSTNAME/docker-compose && sudo docker-compose --env-file /etc/secrets/.docker up
+1p && \
+$SCRIPT_DIR/common/config/configure-auto-updates.sh && \
+$SCRIPT_DIR/common/config/configure-smb-shares.sh && \
+$SCRIPT_DIR/common/config/configure-ssh-server.sh && \
+cd $SCRIPT_DIR/hosts/$HOSTNAME/docker-compose && \
+sudo docker-compose --env-file /etc/secrets/.docker up

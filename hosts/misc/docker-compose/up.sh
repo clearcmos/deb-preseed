@@ -1,6 +1,6 @@
 #!/bin/bash
 # Source Cloudflare credentials
-source /etc/secrets/.misc
+source /etc/secrets/.$(hostname)
 
 # Ensure acme.json exists with proper permissions
 if [ ! -f "./traefik/acme.json" ]; then
