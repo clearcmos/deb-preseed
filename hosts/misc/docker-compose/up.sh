@@ -26,13 +26,13 @@ fi
 if [ -r "/etc/secrets/.docker" ]; then
     export ACME_EMAIL=$(grep -i "ACME_EMAIL" /etc/secrets/.docker | cut -d= -f2)
     echo "Using ACME_EMAIL: $ACME_EMAIL"
-    
+
     # Launch production environment with DNS setup using secrets
     sudo -E docker-compose --env-file /etc/secrets/.docker up "$@"
 else
     echo "Warning: Cannot read /etc/secrets/.docker - you may need to run 1p function to fix permissions"
     echo "Continuing without Docker credentials..."
-    
+
     # Launch production environment without secrets
     sudo -E docker-compose up "$@"
 fi

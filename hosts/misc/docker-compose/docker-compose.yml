@@ -42,6 +42,7 @@ services:
       - "traefik.http.routers.dashboard.entrypoints=websecure"
       - "traefik.http.routers.dashboard.tls=true"
       - "traefik.http.routers.dashboard.tls.certresolver=le"
+      - "traefik.http.routers.dashboard.middlewares=authelia@docker"
     restart: unless-stopped
 networks:
   default:
