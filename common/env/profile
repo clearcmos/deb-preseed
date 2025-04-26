@@ -34,7 +34,7 @@ if [ -d /etc/profile.d ]; then
 fi
 
 for file in /etc/secrets/* /etc/secrets/.*; do
-    if [ -f "$file" ] && [ "$file" != "/etc/secrets/." ] && [ "$file" != "/etc/secrets/.." ]; then
+    if [ -f "$file" ] && [ "$file" != "/etc/secrets/." ] && [ "$file" != "/etc/secrets/.." ] && [ "$file" != "/etc/secrets/.ignore" ]; then
         source "$file"
     fi
 done

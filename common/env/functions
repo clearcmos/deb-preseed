@@ -443,6 +443,25 @@ pushseed() {
     fi
   } >/dev/null 2>&1
 
+  # Get the current username
+  local current_user=$(whoami)
+  
+  # Run the sensitive pattern scanner first
+  local pattern_scanner="/home/${current_user}/deb-preseed/utils/scan-sensitive-patterns.sh"
+  
+  echo "Running sensitive pattern scan before proceeding..."
+  local scan_result=$(bash "$pattern_scanner")
+  
+  # Check if the result exactly matches the expected output
+  if [ "$scan_result" != "No matches found for any patterns." ]; then
+    echo "ERROR: Sensitive patterns were found in the codebase."
+    echo "Please check the scan results and remove any sensitive information before pushing:"
+    echo "$scan_result"
+    return 1
+  fi
+  
+  echo "No sensitive patterns found. Proceeding with push..."
+  
   # Set the target repository and branch
   local repo_name="clearcmos/deb-preseed"
   local branch="main"

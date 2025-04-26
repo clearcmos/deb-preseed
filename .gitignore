@@ -1,8 +1,21 @@
+# Dot files
 .*
 !.gitignore
+
+# Generated and runtime files
 **/*.runtime
 **/*.sqlite3
 **/notification.txt
 *.iso
 base.log
+
+# Service specific sensitive files
 hosts/misc/docker-compose/traefik/acme.json
+
+# Wireguard sensitive files
+hosts/misc/docker-compose/wireguard/config/**/*.conf
+!hosts/misc/docker-compose/wireguard/config/templates/*.conf
+hosts/misc/docker-compose/wireguard/config/**/*.png
+hosts/misc/docker-compose/wireguard/config/**/privatekey-*
+hosts/misc/docker-compose/wireguard/config/**/presharedkey-*
+hosts/misc/docker-compose/wireguard/config/**/.donoteditthisfile

@@ -30,6 +30,10 @@ services:
       service: jellyfin-external
     depends_on:
       - traefik
+  wireguard:
+    extends:
+      file: ./wireguard/docker-compose.yml
+      service: wireguard
   dashboard:
     image: traefik/whoami
     labels:

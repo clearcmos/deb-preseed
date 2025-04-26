@@ -244,12 +244,12 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 AllowUsers $CURRENT_NON_ROOT_USER root
 
-# Restrict SSH access to LAN IPs
-Match Address 192.168.1.0/24
+# Restrict SSH access to LAN, WireGuard VPN IPs, and Docker networks
+Match Address 192.168.1.0/24,10.13.13.0/24,192.168.32.0/20
   PermitRootLogin yes
   PubkeyAuthentication yes
 
-Match Address *,!192.168.1.0/24
+Match Address *,!192.168.1.0/24,!10.13.13.0/24,!192.168.32.0/20
   DenyUsers *
 EOF
   
@@ -270,7 +270,10 @@ finalize_script() {
     log_info "$(blue "SSH has been configured with the following settings:")" "color"
     
     log_info "- SSH access is restricted to user: $(cyan "$CURRENT_NON_ROOT_USER and root")" "color"
-    log_info "- Access is restricted to LAN IPs (192.168.1.0/24 network)"
+    log_info "- Access is restricted to the following networks:"
+    log_info "  - LAN IPs (192.168.1.0/24)"
+    log_info "  - WireGuard VPN (10.13.13.0/24)"
+    log_info "  - Docker network (192.168.32.0/20)"
     log_info "- Root login is enabled"
     log_info "- Password authentication is disabled"
     
