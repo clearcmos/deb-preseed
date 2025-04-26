@@ -48,7 +48,8 @@ fi
 # Get hostname for dynamic restore
 HOST=$(hostname)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOST_DIR="$(realpath "$SCRIPT_DIR/../hosts/$HOST")"
+REPO_ROOT="$(realpath "$SCRIPT_DIR/../..")"
+HOST_DIR="$REPO_ROOT/hosts/$HOST"
 
 # Configuration
 BACKUP_DIR="$BACKUP_MOUNT"
