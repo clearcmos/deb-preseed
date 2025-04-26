@@ -140,14 +140,8 @@ restore_backup() {
     target_dir="$HOST_DIR/$(dirname "$rel_path")"
     mkdir -p "$target_dir"
     
-    # Check if file already exists
+    # Set target file path without creating backups
     target_file="$HOST_DIR/$rel_path"
-    if [ -f "$target_file" ]; then
-      echo "File already exists: $rel_path"
-      echo "Creating backup of existing file..."
-      cp -p "$target_file" "${target_file}.backup_$(date +%Y%m%d%H%M%S)"
-      echo "Existing file backed up"
-    fi
     
     # Copy file preserving attributes
     cp -p "$file" "$target_file"
@@ -213,14 +207,8 @@ restore_backup() {
             # Create target directory and restore file
             mkdir -p "$target_dir"
             
-            # Check if the file already exists
+            # Set target file path without creating backups
             target_file="$target_dir/$(basename "$db_rel_path")"
-            if [ -f "$target_file" ]; then
-              echo "Database file already exists at $target_file"
-              echo "Creating backup of existing database..."
-              cp -p "$target_file" "${target_file}.backup_$(date +%Y%m%d%H%M%S)"
-              echo "Existing database backed up"
-            fi
             
             cp -p "$db_file" "$target_file"
             echo "Restored database to $target_file"
@@ -234,12 +222,7 @@ restore_backup() {
           if [ -d "$volume_path" ]; then
             echo "Found existing volume at $volume_path"
             
-            # Create a backup of existing data before overwriting
-            echo "Creating backup of existing data..."
-            backup_dir="${volume_path}_backup_$(date +%Y%m%d%H%M%S)"
-            mkdir -p "$backup_dir"
-            cp -rp "$volume_path"/* "$backup_dir/" 2>/dev/null || true
-            echo "Existing data backed up to $backup_dir"
+            # Skip backup of existing data
             
             # Clear existing data
             echo "Clearing existing data..."

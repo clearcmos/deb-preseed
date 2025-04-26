@@ -1,10 +1,9 @@
 #!/bin/bash
+# Change to the script's directory
+cd "$(dirname "$0")"
+
 # Source Cloudflare credentials
 source /etc/secrets/.$(hostname)
-
-# Get script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-cd "$SCRIPT_DIR"
 
 # Ensure acme.json exists with proper permissions
 if [ ! -f "./traefik/acme.json" ]; then
