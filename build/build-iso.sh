@@ -87,9 +87,9 @@ if [[ ! -f "$HOST_ENV_FILE" ]]; then
   mkdir -p "$(dirname "$HOST_ENV_FILE")"
   cat > "$HOST_ENV_FILE" <<'EOF'
 # Network settings for this host
-NETWORK_HOSTNAME=msi
+NETWORK_HOSTNAME=your-hostname
 NETWORK_DOMAIN=home.arpa
-NETWORK_IP=192.168.1.3
+NETWORK_IP=192.168.1.2
 NETWORK_GATEWAY=192.168.1.1
 NETWORK_DNS=192.168.1.1
 NETWORK_NETMASK=255.255.255.0
