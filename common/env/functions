@@ -209,6 +209,13 @@
     sudo mkdir -p /etc/secrets
     sudo chown root:secrets /etc/secrets
     sudo chmod 750 /etc/secrets  # Allow directory traversal for secrets group
+    
+    # Ensure the secrets group has proper read access to the directory
+    # This is critical for accessing files inside even when you're in the secrets group
+    if ! sudo [ -r "/etc/secrets" ] || ! sudo [ -x "/etc/secrets" ]; then
+        echo "Fixing permissions on /etc/secrets directory..."
+        sudo chmod 750 /etc/secrets  # Ensure directory can be traversed by group members
+    fi
 
     # Save token if not already saved
     if [ "$token_loaded_from_file" = false ]; then
@@ -221,6 +228,11 @@
     # Fix ownership and permissions for any existing files (including hidden files)
     if [ -d /etc/secrets ] && [ "$(sudo find /etc/secrets -mindepth 1 | wc -l)" -gt 0 ]; then
         echo "Fixing ownership and permissions for existing files..."
+        # Ensure the directory itself has correct permissions
+        sudo chown root:secrets /etc/secrets
+        sudo chmod 750 /etc/secrets
+        
+        # Fix permissions for all files inside the directory
         sudo find /etc/secrets -mindepth 1 -maxdepth 1 -exec chown root:secrets {} \;
         sudo find /etc/secrets -mindepth 1 -maxdepth 1 -exec chmod 640 {} \;
     fi

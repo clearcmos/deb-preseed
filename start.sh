@@ -24,7 +24,37 @@ echo 'export PATH=/usr/local/lib/shared-npm/bin:$PATH' >> ~/.profile && \
 source ~/.profile && \
 
 # Run 1p and auto-respond "y" to the prompt
-yes y | 1p
+1p
+
+# Additional check to ensure /etc/secrets permissions are correct
+if [ -d "/etc/secrets" ]; then
+    # Ensure proper ownership and permissions for /etc/secrets directory
+    sudo chown root:secrets /etc/secrets
+    sudo chmod 750 /etc/secrets
+    
+    # Fix permissions for all files inside
+    echo "Ensuring proper permissions on secret files..."
+    sudo chown -R root:secrets /etc/secrets
+    sudo find /etc/secrets -type f -exec sudo chmod 640 {} \;
+    
+    # Make sure the user is in the secrets group and the group is active
+    if id -nG | grep -qw secrets; then
+        # User is in secrets group, but it might not be active in current session
+        if ! touch /etc/secrets/.test 2>/dev/null; then
+            echo "Running newgrp to activate secrets group permissions..."
+            echo "After this script finishes, you might need to run 'newgrp secrets' to access secrets in new terminal sessions."
+        fi
+    elif getent group secrets | grep -qw "$USER"; then
+        # User is in group but needs to log out and back in
+        echo "NOTE: You are in the secrets group, but need to log out and back in for it to take effect."
+        echo "Alternatively, you can run 'newgrp secrets' to activate it in this session."
+    else
+        # User is not in the secrets group
+        echo "Adding $USER to secrets group..."
+        sudo usermod -a -G secrets "$USER"
+        echo "NOTE: You have been added to the secrets group. Please log out and back in, or run 'newgrp secrets'."
+    fi
+fi
 
 $SCRIPT_DIR/common/config/configure-auto-updates.sh && \
 $SCRIPT_DIR/common/config/configure-smb-shares.sh && \
