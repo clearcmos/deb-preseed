@@ -13,6 +13,8 @@ fi
 source /etc/profile
 
 # Run the initial setup commands
+sudo npm install -g @anthropic-ai/claude-code && \
+npm install -g @anthropic-ai/claude-code && \
 1p && \
 $SCRIPT_DIR/common/config/configure-auto-updates.sh && \
 $SCRIPT_DIR/common/config/configure-smb-shares.sh && \
@@ -23,7 +25,7 @@ read -p "Do you want to restore from a system backup? (y/n): " restore_choice
 if [[ "$restore_choice" =~ ^[Yy]$ ]]; then
     echo "Running restore script..."
     $SCRIPT_DIR/common/backup/restore-host.sh
-    
+
     # After restore, ask if user wants to start containers
     read -p "Do you want to start the containers now? (y/n): " start_choice
     if [[ "$start_choice" =~ ^[Yy]$ ]]; then

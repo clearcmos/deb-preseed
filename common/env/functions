@@ -109,55 +109,60 @@
         # Secure credential input
         echo -e "\nDecrypting 1Password token:"
 
-        # Get password from user to decrypt token
-        while true; do
-            read -rsp "Enter password to decrypt token: " decrypt_password
-            echo  # New line after password input
-            [[ -n "$decrypt_password" ]] && break
-            echo -e "\nError: Password cannot be empty"
-        done
+        # Create a temporary directory for the token
+        TOKEN_DIR=$(mktemp -d)
+        trap 'rm -rf "$TOKEN_DIR" 2>/dev/null || true' EXIT
 
+        # Fetch encrypted token - do this outside the password loop
         echo "Fetching encrypted token from 192.168.1.4..."
 
         # smbclient should already be installed by our pre-check
         if ! which smbclient >/dev/null 2>&1; then
             echo "Error: smbclient not available. Cannot fetch token."
+            rm -rf "$TOKEN_DIR"
             return 1
         fi
 
-        # Create a temporary directory for the token
-        TOKEN_DIR=$(mktemp -d)
-        trap 'rm -rf "$TOKEN_DIR" 2>/dev/null || true' EXIT
-
         # Use smbclient to fetch the encrypted token
-        if smbclient //192.168.1.4/deployment -U 'guest%' -c "prompt OFF; lcd $TOKEN_DIR; get encrypted-1p-token" > /dev/null 2>&1; then
-            if [ -f "$TOKEN_DIR/encrypted-1p-token" ]; then
-                # Decrypt the token file with the provided password
-                # Using pbkdf2 with 100000 iterations for stronger security
-                token=$(openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -d -salt -in "$TOKEN_DIR/encrypted-1p-token" -pass pass:"$decrypt_password" 2>/dev/null)
-
-                # Check if decryption was successful
-                if [ $? -ne 0 ]; then
-                    echo "Error: Failed to decrypt token. Incorrect password."
-                    rm -rf "$TOKEN_DIR"
-                    return 1
-                fi
-            else
-                echo "Error: Failed to retrieve encrypted token file"
-                rm -rf "$TOKEN_DIR"
-                return 1
-            fi
-        else
+        if ! smbclient //192.168.1.4/deployment -U 'guest%' -c "prompt OFF; lcd $TOKEN_DIR; get encrypted-1p-token" > /dev/null 2>&1; then
             echo "Error: Could not connect to 192.168.1.4/deployment using SMB"
             echo "Make sure the server is accessible and the share exists."
             rm -rf "$TOKEN_DIR"
             return 1
         fi
 
+        if [ ! -f "$TOKEN_DIR/encrypted-1p-token" ]; then
+            echo "Error: Failed to retrieve encrypted token file"
+            rm -rf "$TOKEN_DIR"
+            return 1
+        fi
+
+        # Try decryption until successful
+        while true; do
+            # Get password from user to decrypt token
+            read -rsp "Enter password to decrypt token: " decrypt_password
+            echo  # New line after password input
+            
+            # Check for empty password
+            if [ -z "$decrypt_password" ]; then
+                echo -e "\nError: Password cannot be empty"
+                continue
+            fi
+            
+            # Attempt to decrypt
+            token=$(openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -d -salt -in "$TOKEN_DIR/encrypted-1p-token" -pass pass:"$decrypt_password" 2>/dev/null)
+            
+            # Check if decryption was successful
+            if [ $? -eq 0 ]; then
+                echo "1Password token successfully decrypted."
+                break
+            else
+                echo "Error: Failed to decrypt token. Incorrect password. Please try again."
+            fi
+        done
+
         # Clean up
         rm -rf "$TOKEN_DIR"
-
-        echo "1Password token successfully decrypted."
 
         # Set the service account token
         export OP_SERVICE_ACCOUNT_TOKEN="$token"
