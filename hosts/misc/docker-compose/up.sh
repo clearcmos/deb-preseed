@@ -2,12 +2,14 @@
 # Source Cloudflare credentials
 source /etc/secrets/.$(hostname)
 
-# Make sure we're in the correct directory
-cd "$(dirname "$0")"
+# Change to the script's directory to ensure relative paths work correctly
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+cd "$SCRIPT_DIR"
 
 # Ensure acme.json exists with proper permissions
 if [ ! -f "./traefik/acme.json" ]; then
     echo "Creating empty acme.json file..."
+    mkdir -p ./traefik
     touch ./traefik/acme.json
     chmod 600 ./traefik/acme.json
 else
