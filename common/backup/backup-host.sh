@@ -11,7 +11,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit $?
 fi
 
-# Source NAS secrets file which contains BACKUP_MOUNT variable
+# Source NAS secrets file which contains BACKUP_MOUNT and BACKUP_PW variables
 if [ -f /etc/secrets/.nas ]; then
   source /etc/secrets/.nas
 fi
@@ -24,15 +24,24 @@ if [ -z "$BACKUP_MOUNT" ]; then
   exit 1
 fi
 
+# Check if BACKUP_PW is defined
+if [ -z "$BACKUP_PW" ]; then
+  echo "ERROR: BACKUP_PW environment variable is not defined."
+  echo "This variable should be defined in /etc/secrets/.nas for encryption."
+  echo "Please make sure the file exists and the variable is properly set."
+  exit 1
+fi
+
 # Get hostname for dynamic backup
 HOST=$(hostname)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOST_DIR="$(realpath "$SCRIPT_DIR/../hosts/$HOST")"
+HOST_DIR="$(realpath "$SCRIPT_DIR/../../hosts/$HOST")"
 
 # Configuration
 BACKUP_DIR="$BACKUP_MOUNT"
 DATE=$(date +%Y-%m-%d-%H%M)
-BACKUP_FILE="$BACKUP_DIR/docker-compose-backup-$DATE.tar.gz"
+BACKUP_FILE="$BACKUP_DIR/docker-compose-backup-$DATE.tar.gz.tmp"
+ENCRYPTED_BACKUP_FILE="$BACKUP_DIR/docker-compose-backup-$DATE.tar.gz"
 LOG_FILE="$BACKUP_DIR/backup-$DATE.log"
 DOCKER_COMPOSE_DIR="$HOST_DIR"
 
@@ -268,22 +277,36 @@ done
 echo "Creating backup archive..."
 tar -czpf "$BACKUP_FILE" -C "$TEMP_DIR" .
 
+# Encrypt the backup file with OpenSSL using AES-256-CBC
+echo "Encrypting backup file..."
+openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -in "$BACKUP_FILE" -out "$ENCRYPTED_BACKUP_FILE" -pass "pass:$BACKUP_PW"
+
+# Verify encryption succeeded
+if [ $? -ne 0 ]; then
+  echo "ERROR: Encryption failed"
+  rm -f "$BACKUP_FILE"
+  exit 1
+fi
+
+# Clean up the temporary unencrypted file
+rm -f "$BACKUP_FILE"
+
 # Set ownership to root:secrets
 echo "Setting archive ownership to root:secrets..."
-chown root:secrets "$BACKUP_FILE"
-chmod 640 "$BACKUP_FILE"
+chown root:secrets "$ENCRYPTED_BACKUP_FILE"
+chmod 640 "$ENCRYPTED_BACKUP_FILE"
 
-# Verify the backup
-echo "Verifying backup integrity..."
-if tar -tzf "$BACKUP_FILE" > /dev/null; then
-  echo "Backup verification successful"
+# Verify the backup can be decrypted
+echo "Verifying backup encryption integrity..."
+if openssl enc -aes-256-cbc -d -salt -pbkdf2 -iter 100000 -in "$ENCRYPTED_BACKUP_FILE" -pass "pass:$BACKUP_PW" | tar -tz > /dev/null; then
+  echo "Backup encryption verification successful"
 else
-  echo "ERROR: Backup verification failed"
+  echo "ERROR: Backup encryption verification failed"
   exit 1
 fi
 
 # Calculate backup size
-BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+BACKUP_SIZE=$(du -h "$ENCRYPTED_BACKUP_FILE" | cut -f1)
 
 # Cleanup old backups (keep last 12 backups)
 echo "Cleaning up old backups..."
@@ -295,5 +318,5 @@ echo "Ensuring correct ownership of all backup files..."
 find "$BACKUP_DIR" -name "docker-compose-backup-*.tar.gz" -exec chown root:secrets {} \; -exec chmod 640 {} \;
 
 echo "Backup completed successfully at $(date)"
-echo "Backup location: $BACKUP_FILE"
+echo "Backup location: $ENCRYPTED_BACKUP_FILE (encrypted)"
 echo "Backup size: $BACKUP_SIZE"

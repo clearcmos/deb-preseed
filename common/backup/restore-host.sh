@@ -37,6 +37,14 @@ if [ -z "$USERNAME" ]; then
   exit 1
 fi
 
+# Check if BACKUP_PW is defined
+if [ -z "$BACKUP_PW" ]; then
+  echo "ERROR: BACKUP_PW environment variable is not defined."
+  echo "This variable should be defined in /etc/secrets/.nas for backup decryption."
+  echo "Please make sure the file exists and the variable is properly set."
+  exit 1
+fi
+
 # Get hostname for dynamic restore
 HOST=$(hostname)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -110,9 +118,17 @@ stop_containers() {
 
 # Function to extract and restore backup
 restore_backup() {
-  echo "Extracting backup to temporary directory..."
+  echo "Extracting and decrypting backup to temporary directory..."
   mkdir -p "$TEMP_DIR"
-  tar -xzf "$BACKUP_FILE" -C "$TEMP_DIR"
+  
+  # Decrypt backup with openssl and extract with tar in one operation
+  openssl enc -aes-256-cbc -d -salt -pbkdf2 -iter 100000 -in "$BACKUP_FILE" -pass "pass:$BACKUP_PW" | tar -xzp -C "$TEMP_DIR"
+  
+  # Check if extraction was successful
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to decrypt and extract backup. Check if the password is correct."
+    exit 1
+  fi
   
   echo "Restoring configuration files..."
   # First, restore configuration files
